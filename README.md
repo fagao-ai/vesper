@@ -1,7 +1,177 @@
-# Tauri + Vue + TypeScript
+# Vesper - SSH隧道管理器
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+![Tauri](https://img.shields.io/badge/Tauri-FFC131?logo=tauri&logoColor=black)
+![Vue.js](https://img.shields.io/badge/Vue.js-4FC08D?logo=vuedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
 
-## Recommended IDE Setup
+Vesper 是一个现代化的 SSH 隧道管理器，提供直观的界面来管理和配置 SSH 连接与隧道。基于 Tauri 框架构建，具有跨平台、高性能和轻量级的特点。
+## ✨ 特性
 
-- [VS Code](https://code.visualstudio.com/) + [Vue - Official](https://marketplace.visualstudio.com/items?itemName=Vue.volar) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+### SSH 连接管理
+- [ ] 支持 SSH 密钥和密码认证
+- [ ] 多服务器配置管理
+- [ ] 连接状态实时监控
+- [ ] 连接历史记录
+- [ ] 服务器分组和标签
+
+### 隧道管理
+- [ ] 本地端口转发 (Local Port Forwarding)
+- [ ] 远程端口转发 (Remote Port Forwarding)
+- [ ] 动态端口转发 (Dynamic Port Forwarding/SOCKS)
+- [ ] 隧道配置文件导入/导出
+- [ ] 隧道批量操作
+
+### 用户界面
+- [x] 现代化的 Vue 3 + TypeScript 界面
+- [ ] 深色/浅色主题
+- [x] 响应式设计
+- [ ] 实时日志查看器
+- [ ] 连接状态可视化
+
+### 高级功能
+- [ ] 隧道自动重连
+- [ ] 配置文件加密存储
+- [ ] 快捷命令生成
+- [ ] 性能监控
+- [ ] 多窗口支持
+## 📦 安装
+
+### 下载预构建版本
+从 Releases 页面下载对应平台的安装包：
+- Windows: .msi 安装包
+- macOS: .dmg 或 .app
+- Linux: .AppImage 或 .deb
+
+### 从源码构建
+
+#### 先决条件
+- Node.js 18+ 和 npm
+- Rust 1.70+
+
+#### 系统依赖
+- **Windows**: 安装 WebView2
+- **macOS**: Xcode 命令行工具
+- **Linux**: WebKit2GTK, libayatana-appindicator, 及其他依赖
+
+#### 构建步骤
+```bash
+# 克隆仓库
+git clone https://github.com/yourusername/vesper.git
+cd vesper
+
+# 安装依赖
+npm install
+
+# 开发模式运行
+npm run tauri dev
+
+# 构建应用
+npm run tauri build
+```
+## 🚀 快速开始
+
+### 添加 SSH 服务器
+1. 点击 "添加服务器" 按钮
+2. 填写主机名、端口、用户名
+3. 选择认证方式（密码或密钥）
+
+### 创建隧道
+1. 选择目标服务器
+2. 点击 "添加隧道"
+3. 配置隧道类型和端口映射
+4. 保存并启动
+
+### 管理连接
+- 在仪表板查看所有连接状态
+- 点击连接/断开按钮控制隧道
+- 查看实时日志
+## 📁 项目结构
+
+```
+vesper/
+├── src-tauri/           # Tauri 后端
+│   ├── src/
+│   │   ├── commands.rs  # Tauri 命令
+│   │   ├── ssh.rs       # SSH 连接逻辑
+│   │   └── main.rs      # 主入口
+│   ├── icons/           # 应用图标
+│   ├── Cargo.toml       # Rust 依赖
+│   └── tauri.conf.json  # Tauri 配置
+├── src/                 # 前端源码
+│   ├── components/      # Vue 组件
+│   ├── views/          # 页面视图
+│   ├── stores/        # Pinia 状态管理
+│   ├── types/          # TypeScript 类型定义
+│   ├── utils/          # 工具函数
+│   ├── assets/         # 静态资源
+│   ├── main.ts         # 前端入口
+│   └── App.vue         # 根组件
+├── public/             # 公共资源
+├── index.html
+├── package.json        # 前端依赖
+├── tsconfig.json       # TypeScript 配置
+├── vite.config.ts      # Vite 配置
+├── CLAUDE.md           # Claude Code 开发指南
+└── README.md
+```
+## 🛠️ 技术栈
+
+### 前端
+- **Vue 3** - 渐进式 JavaScript 框架
+- **TypeScript** - 类型安全的 JavaScript
+- **Vite** - 下一代前端构建工具
+- **Pinia** - Vue 状态管理
+- **Naive UI** - Vue 3 组件库
+- **VueUse** - Vue 组合式 API 工具集
+
+### 后端
+- **Tauri** - 构建小型、快速的跨平台应用
+- **Rust** - 系统编程语言
+- **russh** - Rust SSH 客户端库
+- **serde** - Rust 序列化框架
+- **tokio** - Rust 异步运行时
+
+### 开发工具
+- **ESLint** - 代码质量检查
+- **Prettier** - 代码格式化
+🔧 配置
+应用配置
+配置文件位置：
+Windows: %APPDATA%/vesper/config.json
+macOS: ~/Library/Application Support/vesper/config.json
+Linux: ~/.config/vesper/config.json
+示例配置：
+{
+"theme": "dark",
+"language": "zh-CN",
+"autoStart": false,
+"logLevel": "info",
+"defaultKeyPath": "~/.ssh/id_rsa"
+}
+SSH 配置
+Vesper 支持标准的 SSH 配置文件格式 (~/.ssh/config)，并可导入现有配置。
+📄 许可证
+本项目采用 MIT 许可证 - 查看 LICENSE文件了解详情。
+🤝 贡献
+欢迎贡献！请查看 CONTRIBUTING.md了解如何开始。
+Fork 项目
+创建功能分支 (git checkout -b feature/AmazingFeature)
+提交更改 (git commit -m 'Add some AmazingFeature')
+推送到分支 (git push origin feature/AmazingFeature)
+开启 Pull Request
+🐛 问题反馈
+请使用 GitHub Issues报告 bug 或提出功能建议。
+📈 开发路线图
+[ ] v0.1.0: 基础 SSH 连接管理
+[ ] v0.2.0: 隧道管理功能
+[ ] v0.3.0: 配置文件导入/导出
+[ ] v0.4.0: 高级功能（代理链、跳板机）
+[ ] v1.0.0: 正式发布
+🙏 致谢
+Tauri- 提供优秀的跨平台应用框架
+Vue.js- 渐进式 JavaScript 框架
+所有贡献者和用户
+📞 支持
+📧 邮箱：support@vesper.app
+💬 Discord 社区
+📖 文档网站
