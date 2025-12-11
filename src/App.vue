@@ -13,9 +13,7 @@ const connectionsStore = useConnectionsStore();
 // Initialize the store with data from the backend
 onMounted(async () => {
   try {
-    console.log('Initializing connections store...');
     await connectionsStore.initialize();
-    console.log('Connections store initialized successfully');
   } catch (error) {
     console.error('Failed to initialize connections store:', error);
   }
@@ -32,7 +30,13 @@ const isDragging = ref(false);
 
 const selectedConnection = computed(() => {
   if (!selectedConnectionId.value) return null;
-  return connectionsStore.getConnectionById(selectedConnectionId.value);
+  const connection = connectionsStore.getConnectionById(selectedConnectionId.value);
+  if (!connection) {
+    // 如果连接不存在，清除选择状态
+    selectedConnectionId.value = null;
+    return null;
+  }
+  return connection;
 });
 
 // 拖动调整分割条
@@ -70,14 +74,18 @@ const handleMouseDown = (e: MouseEvent) => {
 
 // Actions
 const handleSelectConnection = (id: string) => {
-  selectedConnectionId.value = id;
+  // 确保选择的连接存在
+  const connection = connectionsStore.getConnectionById(id);
+  if (connection) {
+    selectedConnectionId.value = id;
+  } else {
+    selectedConnectionId.value = null;
+  }
 };
 
 const handleAddConnection = () => {
-  console.log('handleAddConnection called - opening modal');
   showAddModal.value = true;
   editingConnection.value = null;
-  console.log('showAddModal set to:', showAddModal.value);
 };
 
 const handleEditConnection = (id: string) => {
@@ -85,6 +93,30 @@ const handleEditConnection = (id: string) => {
   if (connection) {
     editingConnection.value = connection;
     showAddModal.value = true;
+  }
+};
+
+const handleDeleteConnection = async (id: string) => {
+  try {
+    await connectionsStore.removeConnection(id);
+
+    // 如果删除的是当前选中的连接，清除选择状态
+    if (selectedConnectionId.value === id) {
+      selectedConnectionId.value = null;
+    }
+  } catch (error) {
+    console.error('Failed to delete connection:', error);
+
+    // 如果是"Connection not found"错误，说明连接已经被删除了，不需要显示错误
+    const errorMessage = String(error);
+    if (errorMessage.includes('Connection not found')) {
+      // 更新UI状态，移除本地状态中的连接
+      if (selectedConnectionId.value === id) {
+        selectedConnectionId.value = null;
+      }
+    } else {
+      alert(`删除连接失败: ${error}`);
+    }
   }
 };
 
@@ -141,11 +173,9 @@ const handleAddTunnel = (connectionId: string) => {
 
 const handleTunnelSubmit = async (tunnelData: Omit<SSHTunnel, 'id' | 'status'>) => {
   try {
-    console.log('Creating tunnel with data:', tunnelData);
     await connectionsStore.addTunnel(tunnelData);
     showTunnelModal.value = false;
     tunnelConnectionId.value = '';
-    console.log('Tunnel created successfully');
   } catch (error) {
     console.error('Failed to create tunnel:', error);
     alert(`创建隧道失败: ${error}`);
@@ -154,12 +184,9 @@ const handleTunnelSubmit = async (tunnelData: Omit<SSHTunnel, 'id' | 'status'>) 
 
 const handleStartTunnel = async (id: string) => {
   try {
-    console.log('Starting tunnel:', id);
     const result = await connectionsStore.startTunnel(id);
     if (!result.success) {
       alert(`启动隧道失败: ${result.message}`);
-    } else {
-      console.log('Tunnel started successfully');
     }
   } catch (error) {
     console.error('Failed to start tunnel:', error);
@@ -169,12 +196,9 @@ const handleStartTunnel = async (id: string) => {
 
 const handleStopTunnel = async (id: string) => {
   try {
-    console.log('Stopping tunnel:', id);
     const result = await connectionsStore.stopTunnel(id);
     if (!result.success) {
       alert(`停止隧道失败: ${result.message}`);
-    } else {
-      console.log('Tunnel stopped successfully');
     }
   } catch (error) {
     console.error('Failed to stop tunnel:', error);
@@ -184,9 +208,7 @@ const handleStopTunnel = async (id: string) => {
 
 const handleRemoveTunnel = async (id: string) => {
   try {
-    console.log('Removing tunnel:', id);
     await connectionsStore.removeTunnel(id);
-    console.log('Tunnel removed successfully');
   } catch (error) {
     console.error('Failed to remove tunnel:', error);
     alert(`删除隧道失败: ${error}`);
@@ -261,6 +283,7 @@ const handleRemoveTunnel = async (id: string) => {
               @select-connection="handleSelectConnection"
               @add-connection="handleAddConnection"
               @edit-connection="handleEditConnection"
+              @delete-connection="handleDeleteConnection"
               @connect="handleConnect"
               @disconnect="handleDisconnect"
             />

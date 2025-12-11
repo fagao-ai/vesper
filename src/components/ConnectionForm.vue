@@ -158,19 +158,53 @@
         </el-form-item>
 
         <!-- Actions -->
-        <div class="flex justify-end space-x-4 pt-6 border-t">
-          <el-button size="large" @click="$emit('cancel')">
-            取消
-          </el-button>
-          <el-button
-            type="primary"
-            size="large"
-            :loading="submitting"
-            @click="handleSubmit"
-          >
-            <el-icon class="mr-2"><Check /></el-icon>
-            {{ isEditing ? '更新连接' : '添加连接' }}
-          </el-button>
+        <div class="flex justify-between items-end pt-6 border-t">
+          <!-- 测试状态提示 -->
+          <div class="text-sm text-gray-500">
+            <template v-if="!isEditing">
+              <div v-if="!testPassed" class="flex items-center">
+                <el-icon class="mr-1 text-orange-500"><Warning /></el-icon>
+                请先测试连接，测试通过后才能保存
+              </div>
+              <div v-else class="flex items-center text-green-600">
+                <el-icon class="mr-1"><CircleCheck /></el-icon>
+                连接测试通过，可以保存
+              </div>
+            </template>
+            <template v-else>
+              <div class="flex items-center text-gray-600">
+                <el-icon class="mr-1"><Edit /></el-icon>
+                编辑模式，可直接保存
+              </div>
+            </template>
+          </div>
+
+          <!-- 按钮组 -->
+          <div class="flex space-x-4">
+            <el-button size="large" @click="$emit('cancel')">
+              取消
+            </el-button>
+            <el-button
+              type="info"
+              size="large"
+              :loading="testing"
+              :disabled="!canTest"
+              @click="handleTestConnection"
+            >
+              <el-icon class="mr-2"><Connection /></el-icon>
+              测试连接
+            </el-button>
+            <el-button
+              type="primary"
+              size="large"
+              :loading="submitting"
+              :disabled="!canSave"
+              @click="handleSubmit"
+            >
+              <el-icon class="mr-2"><Check /></el-icon>
+              {{ isEditing ? '更新连接' : '添加连接' }}
+            </el-button>
+          </div>
         </div>
       </el-form>
     </el-card>
@@ -178,8 +212,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted } from 'vue';
+import { ref, computed, reactive, onMounted, watch } from 'vue';
 import { ElForm, ElMessage } from 'element-plus';
+import { Connection, Monitor, Location, User, Lock, Key, Check, FolderOpened, Warning, CircleCheck, Edit } from '@element-plus/icons-vue';
 import { open } from '@tauri-apps/plugin-dialog';
 import { homeDir } from '@tauri-apps/api/path';
 import type { SSHConnection } from '../types';
@@ -197,8 +232,38 @@ const emit = defineEmits<{
 
 const formRef = ref<InstanceType<typeof ElForm>>();
 const submitting = ref(false);
+const testing = ref(false);
+
+// 测试状态跟踪
+const testPassed = ref(false);
+const lastTestedConnection = ref('');
 
 const isEditing = computed(() => !!props.connection);
+
+// 计算属性：是否可以测试连接（表单验证通过且有必要的认证信息）
+const canTest = computed(() => {
+  const hasBasicFields = formData.name.trim() &&
+                        formData.host.trim() &&
+                        formData.port &&
+                        formData.username.trim();
+
+  const hasAuthFields = formData.authMethod === 'password'
+    ? formData.password.trim()
+    : formData.keyPath.trim();
+
+  return hasBasicFields && hasAuthFields;
+});
+
+// 计算属性：是否可以保存连接（只有测试通过才能保存）
+const canSave = computed(() => {
+  // 编辑模式不需要测试通过，直接允许保存
+  if (isEditing.value) {
+    return canTest.value;
+  }
+
+  // 新建模式需要测试通过
+  return testPassed.value && canTest.value;
+});
 
 const formData = reactive({
   name: '',
@@ -222,7 +287,7 @@ const formRules = computed(() => ({
   ],
   port: [
     { required: true, message: '请输入端口号', trigger: 'blur' },
-    { type: 'number', min: 1, max: 65535, message: '端口号应在 1 到 65535 之间', trigger: 'blur' }
+    { type: 'number' as const, min: 1, max: 65535, message: '端口号应在 1 到 65535 之间', trigger: 'blur' }
   ],
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
@@ -246,8 +311,6 @@ const formRules = computed(() => ({
 
 const selectKeyFile = async () => {
   try {
-    console.log('开始选择密钥文件...');
-
     // 获取用户主目录，尝试打开 .ssh 目录
     const homeDirPath = await homeDir();
     let defaultPath = '';
@@ -257,40 +320,132 @@ const selectKeyFile = async () => {
       defaultPath = `${homeDirPath}/.ssh`;
     }
 
-    console.log('尝试打开默认路径:', defaultPath);
-
     // 文件选择对话框，不使用过滤器，允许选择所有文件
     const selected = await open({
       title: '选择SSH私钥文件',
       multiple: false
     });
 
-    console.log('文件选择结果:', selected);
-
     if (selected && typeof selected === 'string') {
       // 检查是否选择了 .pub 文件，如果是则拒绝
       if (selected.endsWith('.pub')) {
         ElMessage.error('不能选择公钥文件(.pub)，请选择私钥文件');
-        console.log('用户试图选择公钥文件，已拒绝:', selected);
         return;
       }
 
       formData.keyPath = selected;
       ElMessage.success('私钥文件选择成功');
-      console.log('私钥文件路径已设置:', selected);
 
       // 触发表单验证以清除错误状态
       if (formRef.value) {
-        formRef.value.validateField('keyPath').catch((error) => {
+        formRef.value.validateField('keyPath').catch(() => {
           // 忽略验证错误，因为此时应该是有效的
         });
       }
-    } else {
-      console.log('用户取消了文件选择或选择结果无效');
     }
   } catch (error) {
     console.error('选择密钥文件失败:', error);
     ElMessage.error('选择密钥文件失败，请手动输入路径');
+  }
+};
+
+const handleTestConnection = async () => {
+  if (!formRef.value || !canTest.value) return;
+
+  try {
+    // 先验证表单
+    const valid = await formRef.value.validate();
+    if (!valid) {
+      ElMessage.warning('请先完善表单信息');
+      return;
+    }
+
+    testing.value = true;
+
+    // 构造连接数据
+    const connectionData = {
+      name: formData.name.trim(),
+      host: formData.host.trim(),
+      port: formData.port,
+      username: formData.username.trim(),
+      auth_method: formData.authMethod,
+      ...(formData.authMethod === 'password'
+        ? { password: formData.password }
+        : { key_path: formData.keyPath.trim() })
+    };
+
+  
+    // 生成当前连接的唯一标识
+    const currentConnection = `${formData.host.trim()}:${formData.port}:${formData.username.trim()}:${formData.authMethod}`;
+
+    // 调用真实的SSH测试API
+    const { sshApi } = await import('../services/ssh');
+    const result = await sshApi.testConnectionData(connectionData);
+
+    if (result.success) {
+      // 测试成功，设置测试通过状态
+      testPassed.value = true;
+      lastTestedConnection.value = currentConnection;
+
+      ElMessage({
+        type: 'success',
+        message: result.message || '连接测试成功！现在可以保存此连接配置。',
+        duration: 3000,
+      });
+    } else {
+      // 测试失败，重置测试状态
+      testPassed.value = false;
+      lastTestedConnection.value = '';
+
+      // 根据错误代码提供更友好的错误提示
+      let errorMessage = result.message;
+
+      switch (result.error_code) {
+        case 'CONNECTION_REFUSED':
+          errorMessage = '连接被拒绝：服务器可能未运行SSH服务或防火墙阻止了连接';
+          break;
+        case 'CONNECTION_TIMEOUT':
+          errorMessage = '连接超时：服务器响应时间过长，请检查网络连接';
+          break;
+        case 'HOST_UNREACHABLE':
+          errorMessage = '主机不可达：请检查主机地址是否正确';
+          break;
+        case 'AUTHENTICATION_FAILED':
+          errorMessage = '认证失败：用户名或密码/密钥不正确';
+          break;
+        case 'KEY_FILE_NOT_FOUND':
+          errorMessage = '密钥文件不存在：请检查密钥文件路径';
+          break;
+        case 'KEY_FILE_READ_ERROR':
+          errorMessage = '密钥文件读取失败：请检查文件权限';
+          break;
+        case 'PUBLICKEY_UNRECOGNIZED':
+          errorMessage = '公钥认证失败：服务器无法识别此密钥，可能需要在服务器上添加公钥';
+          break;
+        default:
+          errorMessage = result.message || '连接测试失败';
+      }
+
+      ElMessage({
+        type: 'error',
+        message: errorMessage,
+        duration: 5000,
+      });
+    }
+
+  } catch (error) {
+    console.error('测试连接失败:', error);
+    // 发生错误时也重置测试状态
+    testPassed.value = false;
+    lastTestedConnection.value = '';
+
+    ElMessage({
+      type: 'error',
+      message: '测试连接时发生错误，请检查网络连接和配置信息',
+      duration: 5000,
+    });
+  } finally {
+    testing.value = false;
   }
 };
 
@@ -320,6 +475,26 @@ const handleSubmit = async () => {
     submitting.value = false;
   }
 };
+
+// 监听表单数据变化，重置测试状态
+watch(
+  () => ({
+    host: formData.host,
+    port: formData.port,
+    username: formData.username,
+    authMethod: formData.authMethod,
+    password: formData.password,
+    keyPath: formData.keyPath
+  }),
+  () => {
+    // 如果不是编辑模式，重置测试状态
+    if (!isEditing.value) {
+      testPassed.value = false;
+      lastTestedConnection.value = '';
+    }
+  },
+  { deep: true }
+);
 
 onMounted(() => {
   if (props.connection) {

@@ -1,0 +1,9 @@
+{
+  "identifier": "main",
+  "description": "Main application capabilities",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default"
+  ]
+}

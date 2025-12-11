@@ -129,6 +129,34 @@ pub async fn test_connection(
 }
 
 #[tauri::command]
+pub async fn test_connection_data(
+    request: CreateConnectionRequest,
+) -> Result<crate::ssh::ConnectionResult, String> {
+    let auth_method = match request.auth_method.as_str() {
+        "password" => AuthMethod::Password,
+        "key" => AuthMethod::Key,
+        _ => return Err("Invalid auth method".to_string()),
+    };
+
+    // 创建临时连接对象用于测试
+    let test_connection = SSHConnection {
+        id: "test".to_string(), // 临时ID
+        name: request.name,
+        host: request.host,
+        port: request.port,
+        username: request.username,
+        auth_method,
+        password: request.password,
+        key_path: request.key_path,
+        status: crate::ssh::ConnectionStatus::Disconnected,
+        last_connected: None,
+    };
+
+    // 执行连接测试
+    Ok(crate::ssh::test_ssh_connection(&test_connection).await)
+}
+
+#[tauri::command]
 pub async fn connect_ssh(
     id: String,
     manager: State<'_, ConnectionManager>,

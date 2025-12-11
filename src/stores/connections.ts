@@ -79,7 +79,8 @@ export const useConnectionsStore = defineStore('connections', () => {
       error.value = null;
       const currentConnection = getConnectionById(id);
       if (!currentConnection) {
-        throw new Error('Connection not found');
+        console.warn(`Attempted to update non-existent connection: ${id}. Skipping update.`);
+        return; // 静默处理，不抛出错误
       }
 
       await sshApi.updateConnection({
@@ -104,14 +105,49 @@ export const useConnectionsStore = defineStore('connections', () => {
   const removeConnection = async (id: string) => {
     try {
       error.value = null;
-      await sshApi.deleteConnection(id);
 
-      // Update local state
+      // 先从本地状态中移除，立即更新UI
       connections.value = connections.value.filter(conn => conn.id !== id);
       tunnels.value = tunnels.value.filter(tunnel => tunnel.connectionId !== id);
+
+      // 然后调用后端删除
+      await sshApi.deleteConnection(id);
+
+      // 短暂延迟后重新获取数据以确保同步
+      setTimeout(async () => {
+        try {
+          await fetchConnections();
+          await fetchTunnels();
+        } catch (refreshErr) {
+          console.warn('Failed to refresh data after deletion:', refreshErr);
+        }
+      }, 100);
+
     } catch (err) {
       error.value = err as string;
       console.error('Failed to delete connection:', err);
+
+      // 如果是"Connection not found"错误，先检查本地是否还有这个连接
+      const errorMessage = String(err);
+      if (errorMessage.includes('Connection not found')) {
+        // 从本地状态中移除连接，即使后端删除失败
+        connections.value = connections.value.filter(conn => conn.id !== id);
+        tunnels.value = tunnels.value.filter(tunnel => tunnel.connectionId !== id);
+
+        // 短暂延迟后重新获取数据
+        setTimeout(async () => {
+          try {
+            await fetchConnections();
+            await fetchTunnels();
+          } catch (refreshErr) {
+            console.warn('Failed to refresh data after connection not found:', refreshErr);
+          }
+        }, 100);
+
+        // 不抛出错误，让UI继续正常工作
+        return;
+      }
+
       throw err;
     }
   };
@@ -119,6 +155,11 @@ export const useConnectionsStore = defineStore('connections', () => {
   const testConnection = async (id: string) => {
     try {
       error.value = null;
+      const connection = getConnectionById(id);
+      if (!connection) {
+        console.warn(`Attempted to test non-existent connection: ${id}. Skipping test.`);
+        return { success: false, message: 'Connection not found', error_code: 'NOT_FOUND' };
+      }
       const result = await sshApi.testConnection(id);
       return result;
     } catch (err) {
@@ -131,10 +172,15 @@ export const useConnectionsStore = defineStore('connections', () => {
   const connectSSH = async (id: string) => {
     try {
       error.value = null;
+      const connection = getConnectionById(id);
+      if (!connection) {
+        console.warn(`Attempted to connect to non-existent connection: ${id}. Skipping connection.`);
+        return { success: false, message: 'Connection not found', error_code: 'NOT_FOUND' };
+      }
+
       const result = await sshApi.connectSSH(id);
 
       // Update connection status locally
-      const connection = getConnectionById(id);
       if (connection && result.success) {
         connection.status = 'connected';
         connection.lastConnected = new Date();
@@ -158,10 +204,15 @@ export const useConnectionsStore = defineStore('connections', () => {
   const disconnectSSH = async (id: string) => {
     try {
       error.value = null;
+      const connection = getConnectionById(id);
+      if (!connection) {
+        console.warn(`Attempted to disconnect from non-existent connection: ${id}. Skipping disconnection.`);
+        return { success: false, message: 'Connection not found', error_code: 'NOT_FOUND' };
+      }
+
       const result = await sshApi.disconnectSSH(id);
 
       // Update connection status locally
-      const connection = getConnectionById(id);
       if (connection && result.success) {
         connection.status = 'disconnected';
       }
@@ -274,6 +325,11 @@ export const useConnectionsStore = defineStore('connections', () => {
 
   // Initialize data on store creation
   const initialize = async () => {
+    // 清空本地状态，然后从后端获取数据
+    connections.value = [];
+    tunnels.value = [];
+    error.value = null;
+
     await Promise.all([
       fetchConnections(),
       fetchTunnels()

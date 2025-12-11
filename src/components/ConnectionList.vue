@@ -168,6 +168,7 @@ const emit = defineEmits<{
   'select-connection': [id: string];
   'add-connection': [];
   'edit-connection': [id: string];
+  'delete-connection': [id: string];
   'connect': [id: string];
   'disconnect': [id: string];
   'add-tunnel': [connectionId: string];
@@ -224,7 +225,12 @@ const formatTunnelConfig = (tunnel: SSHTunnel) => {
 };
 
 const handleAction = async (command: string) => {
-  const [action, id] = command.split('-');
+  // 修复：正确处理UUID中的连字符，只分割第一个连字符
+  const dashIndex = command.indexOf('-');
+  if (dashIndex === -1) return;
+
+  const action = command.substring(0, dashIndex);
+  const id = command.substring(dashIndex + 1);
 
   switch (action) {
     case 'test':
@@ -244,7 +250,6 @@ const handleAction = async (command: string) => {
 
 // 添加调试函数
 const debugEmit = (event: string, ...args: any[]) => {
-  console.log('ConnectionList emitting:', event, args);
   emit(event as any, ...(args as any));
 };
 
@@ -276,7 +281,8 @@ const handleDelete = async (id: string) => {
       }
     );
 
-    await connectionsStore.removeConnection(id);
+    // 触发父组件的删除事件
+    emit('delete-connection', id);
     ElMessage.success('连接删除成功');
   } catch (error) {
     if (error !== 'cancel') {

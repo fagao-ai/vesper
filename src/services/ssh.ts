@@ -67,6 +67,10 @@ export const sshApi = {
     return await invoke('test_connection', { id });
   },
 
+  async testConnectionData(connectionData: CreateConnectionRequest): Promise<ConnectionResult> {
+    return await invoke('test_connection_data', { request: connectionData });
+  },
+
   async connectSSH(id: string): Promise<ConnectionResult> {
     return await invoke('connect_ssh', { id });
   },

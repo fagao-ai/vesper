@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fs;
+use std::net::TcpStream;
+use std::path::Path;
 use std::time::SystemTime;
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -114,9 +117,10 @@ impl ConnectionManager {
         let mut connections = self.connections.write().await;
         let mut tunnels = self.tunnels.write().await;
 
-        connections.remove(id).ok_or("Connection not found")?;
+        // 尝试移除连接，如果连接不存在也视为成功
+        connections.remove(id);
 
-        // Remove associated tunnels
+        // 删除相关的隧道，无论连接是否存在
         tunnels.retain(|_, tunnel| tunnel.connection_id != id);
 
         Ok(())
@@ -282,6 +286,164 @@ impl ConnectionManager {
 impl Default for ConnectionManager {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// 独立的SSH连接测试函数，用于测试连接数据而不需要保存到数据库
+pub async fn test_ssh_connection(connection: &SSHConnection) -> ConnectionResult {
+    // 在异步上下文中运行同步的 SSH 连接测试
+    tokio::task::spawn_blocking({
+        let connection = connection.clone();
+        move || {
+            test_ssh_connection_sync(&connection)
+        }
+    }).await.unwrap_or_else(|_| {
+        ConnectionResult {
+            success: false,
+            message: "SSH测试任务执行失败".to_string(),
+            error_code: Some("TASK_EXECUTION_ERROR".to_string()),
+        }
+    })
+}
+
+// 同步的SSH连接测试函数
+fn test_ssh_connection_sync(connection: &SSHConnection) -> ConnectionResult {
+    // 首先验证密钥文件路径（如果使用密钥认证）
+    if let AuthMethod::Key = connection.auth_method {
+        if let Some(key_path) = &connection.key_path {
+            if !Path::new(key_path).exists() {
+                return ConnectionResult {
+                    success: false,
+                    message: format!("密钥文件不存在: {}", key_path),
+                    error_code: Some("KEY_FILE_NOT_FOUND".to_string()),
+                };
+            }
+        } else {
+            return ConnectionResult {
+                success: false,
+                message: "密钥认证需要指定密钥文件路径".to_string(),
+                error_code: Some("KEY_PATH_MISSING".to_string()),
+            };
+        }
+    }
+
+    // 尝试建立TCP连接
+    let tcp_addr = format!("{}:{}", connection.host, connection.port);
+    let tcp = match TcpStream::connect(&tcp_addr) {
+        Ok(stream) => stream,
+        Err(e) => {
+            let error_code = match e.kind() {
+                std::io::ErrorKind::ConnectionRefused => "CONNECTION_REFUSED",
+                std::io::ErrorKind::TimedOut => "CONNECTION_TIMEOUT",
+                std::io::ErrorKind::HostUnreachable => "HOST_UNREACHABLE",
+                _ => "TCP_CONNECTION_ERROR",
+            };
+
+            return ConnectionResult {
+                success: false,
+                message: format!("无法连接到服务器 {}:{} - {}", connection.host, connection.port, e),
+                error_code: Some(error_code.to_string()),
+            };
+        }
+    };
+
+    // 设置TCP超时
+    if let Err(e) = tcp.set_read_timeout(Some(std::time::Duration::from_secs(10))) {
+        return ConnectionResult {
+            success: false,
+            message: format!("设置连接超时失败: {}", e),
+            error_code: Some("TIMEOUT_SETUP_ERROR".to_string()),
+        };
+    }
+
+    if let Err(e) = tcp.set_write_timeout(Some(std::time::Duration::from_secs(10))) {
+        return ConnectionResult {
+            success: false,
+            message: format!("设置写入超时失败: {}", e),
+            error_code: Some("TIMEOUT_SETUP_ERROR".to_string()),
+        };
+    }
+
+    // 尝试建立SSH会话
+    let mut sess = match ssh2::Session::new() {
+        Ok(session) => session,
+        Err(e) => {
+            return ConnectionResult {
+                success: false,
+                message: format!("创建SSH会话失败: {}", e),
+                error_code: Some("SSH_SESSION_ERROR".to_string()),
+            };
+        }
+    };
+
+    sess.set_tcp_stream(tcp);
+
+    if let Err(e) = sess.handshake() {
+        return ConnectionResult {
+            success: false,
+            message: format!("SSH握手失败: {}", e),
+            error_code: Some("SSH_HANDSHAKE_ERROR".to_string()),
+        };
+    }
+
+    // 尝试用户认证
+    let auth_result = match connection.auth_method {
+        AuthMethod::Password => {
+            if let Some(password) = &connection.password {
+                sess.userauth_password(&connection.username, password)
+            } else {
+                return ConnectionResult {
+                    success: false,
+                    message: "密码认证需要提供密码".to_string(),
+                    error_code: Some("PASSWORD_MISSING".to_string()),
+                };
+            }
+        },
+        AuthMethod::Key => {
+            if let Some(key_path) = &connection.key_path {
+                // 尝试读取私钥文件
+                let private_key = match fs::read_to_string(key_path) {
+                    Ok(key) => key,
+                    Err(e) => {
+                        return ConnectionResult {
+                            success: false,
+                            message: format!("读取私钥文件失败 {}: {}", key_path, e),
+                            error_code: Some("KEY_FILE_READ_ERROR".to_string()),
+                        };
+                    }
+                };
+
+                // 尝试使用私钥认证
+                sess.userauth_pubkey_memory(&connection.username, None, &private_key, None)
+            } else {
+                return ConnectionResult {
+                    success: false,
+                    message: "密钥认证需要提供密钥文件路径".to_string(),
+                    error_code: Some("KEY_PATH_MISSING".to_string()),
+                };
+            }
+        }
+    };
+
+    match auth_result {
+        Ok(_) => {
+            ConnectionResult {
+                success: true,
+                message: "SSH连接测试成功".to_string(),
+                error_code: None,
+            }
+        },
+        Err(e) => {
+            // 简化错误处理，直接使用错误消息
+            let message = format!("SSH认证失败: {}", e);
+            let error_code = Some("SSH_AUTH_ERROR".to_string());
+
+            ConnectionResult {
+                success: false,
+                message,
+                error_code,
+            }
+        }
     }
 }
 

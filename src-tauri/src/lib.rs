@@ -17,6 +17,7 @@ pub fn run() {
             commands::update_connection,
             commands::delete_connection,
             commands::test_connection,
+            commands::test_connection_data,
             commands::connect_ssh,
             commands::disconnect_ssh,
             // SSH Tunnel Commands

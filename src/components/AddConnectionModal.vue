@@ -33,14 +33,7 @@ const emit = defineEmits<{
   cancel: [];
 }>();
 
-// 添加调试
-watch(() => props.visible, (newValue) => {
-  console.log('AddConnectionModal visible changed to:', newValue);
-});
-
 const isEditing = computed(() => !!props.connection);
-
-console.log('AddConnectionModal initial props.visible:', props.visible);
 
 const handleSubmit = async (connectionData: Omit<SSHConnection, 'id' | 'status' | 'lastConnected'>) => {
   emit('submit', connectionData);
