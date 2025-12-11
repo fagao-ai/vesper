@@ -31,28 +31,28 @@ Vesper is a modern SSH tunnel manager built with Tauri (Rust backend) and Vue 3 
 ### Frontend Development
 ```bash
 # Start development server (frontend only)
-npm run dev
+pnpm dev
 
 # Build frontend for production
-npm run build
+pnpm build
 
 # Preview built frontend
-npm run preview
+pnpm preview
 ```
 
 ### Tauri Development
 ```bash
 # Start Tauri development mode (runs both frontend and backend)
-npm run tauri dev
+pnpm tauri dev
 
 # Build complete application for distribution
-npm run tauri build
+pnpm tauri build
 ```
 
 ### General Development
 ```bash
 # Install all dependencies (frontend + Tauri)
-npm install
+pnpm install
 ```
 
 ## Key Technologies
@@ -92,8 +92,8 @@ vesper/
 
 ## Development Notes
 
-- This is a Tauri application, so always use `npm run tauri dev` for full development experience
-- Frontend builds can be tested independently with `npm run dev`
+- This is a Tauri application, so always use `pnpm tauri dev` for full development experience
+- Frontend builds can be tested independently with `pnpm dev`
 - TypeScript compilation is checked during builds with `vue-tsc --noEmit`
 - The application is designed to manage SSH connections and tunnels
 - Configuration files are stored in platform-specific locations (as detailed in README.md)

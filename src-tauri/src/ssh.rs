@@ -86,10 +86,40 @@ impl ConnectionManager {
         }
     }
 
+    async fn load_from_storage(&self) -> Result<(), String> {
+        use crate::storage::DataManager;
+        let data_manager = DataManager::new()?;
+        let (connections, tunnels) = data_manager.load_connections_and_tunnels().await?;
+        *self.connections.write().await = connections;
+        *self.tunnels.write().await = tunnels;
+        Ok(())
+    }
+
+    async fn save_to_storage(&self) -> Result<(), String> {
+        use crate::storage::DataManager;
+        let data_manager = DataManager::new()?;
+        // Clone the data to avoid lifetime issues
+        let connections = self.connections.read().await.clone();
+        let tunnels = self.tunnels.read().await.clone();
+        data_manager.save_connections_and_tunnels(&connections, &tunnels).await
+    }
+
+    pub async fn initialize(&self) -> Result<(), String> {
+        // Load data from storage on startup
+        self.load_from_storage().await
+    }
+
     pub async fn add_connection(&self, connection: SSHConnection) -> Result<String, String> {
         let mut connections = self.connections.write().await;
         let id = connection.id.clone();
         connections.insert(id.clone(), connection);
+        drop(connections); // Release the lock
+
+        // Save to storage
+        if let Err(e) = self.save_to_storage().await {
+            eprintln!("Failed to save data: {}", e);
+        }
+
         Ok(id)
     }
 
@@ -107,6 +137,13 @@ impl ConnectionManager {
         let mut connections = self.connections.write().await;
         if connections.contains_key(id) {
             connections.insert(id.to_string(), updates);
+            drop(connections); // Release the lock
+
+            // Save to storage
+            if let Err(e) = self.save_to_storage().await {
+                eprintln!("Failed to save data: {}", e);
+            }
+
             Ok(())
         } else {
             Err("Connection not found".to_string())
@@ -114,14 +151,22 @@ impl ConnectionManager {
     }
 
     pub async fn remove_connection(&self, id: &str) -> Result<(), String> {
-        let mut connections = self.connections.write().await;
-        let mut tunnels = self.tunnels.write().await;
+        // First remove the connection
+        {
+            let mut connections = self.connections.write().await;
+            connections.remove(id);
+        } // Release connections lock
 
-        // 尝试移除连接，如果连接不存在也视为成功
-        connections.remove(id);
+        // Then remove related tunnels
+        {
+            let mut tunnels = self.tunnels.write().await;
+            tunnels.retain(|_, tunnel| tunnel.connection_id != id);
+        } // Release tunnels lock
 
-        // 删除相关的隧道，无论连接是否存在
-        tunnels.retain(|_, tunnel| tunnel.connection_id != id);
+        // Save to storage
+        if let Err(e) = self.save_to_storage().await {
+            eprintln!("Failed to save data: {}", e);
+        }
 
         Ok(())
     }
@@ -154,6 +199,12 @@ impl ConnectionManager {
             // For demo purposes, we'll simulate a successful connection
             connection.status = ConnectionStatus::Connected;
             connection.last_connected = Some(SystemTime::now());
+            drop(connections); // Release the lock
+
+            // Save to storage
+            if let Err(e) = self.save_to_storage().await {
+                eprintln!("Failed to save data: {}", e);
+            }
 
             ConnectionResult {
                 success: true,
@@ -174,6 +225,12 @@ impl ConnectionManager {
 
         if let Some(connection) = connections.get_mut(id) {
             connection.status = ConnectionStatus::Disconnected;
+            drop(connections); // Release the lock
+
+            // Save to storage
+            if let Err(e) = self.save_to_storage().await {
+                eprintln!("Failed to save data: {}", e);
+            }
 
             ConnectionResult {
                 success: true,
@@ -194,6 +251,13 @@ impl ConnectionManager {
         let mut tunnels = self.tunnels.write().await;
         let id = tunnel.id.clone();
         tunnels.insert(id.clone(), tunnel);
+        drop(tunnels); // Release the lock
+
+        // Save to storage
+        if let Err(e) = self.save_to_storage().await {
+            eprintln!("Failed to save data: {}", e);
+        }
+
         Ok(id)
     }
 
@@ -214,6 +278,12 @@ impl ConnectionManager {
     pub async fn remove_tunnel(&self, id: &str) -> Result<(), String> {
         let mut tunnels = self.tunnels.write().await;
         tunnels.remove(id).ok_or("Tunnel not found")?;
+
+        // Save to storage
+        if let Err(e) = self.save_to_storage().await {
+            eprintln!("Failed to save data: {}", e);
+        }
+
         Ok(())
     }
 
@@ -222,18 +292,25 @@ impl ConnectionManager {
         let connections = self.connections.read().await;
 
         if let Some(tunnel) = tunnels.get_mut(id) {
+            // Clone the tunnel name before we potentially drop the lock
+            let tunnel_name = tunnel.name.clone();
+
             // Verify the associated connection is active
             if let Some(connection) = connections.get(&tunnel.connection_id) {
                 match connection.status {
                     ConnectionStatus::Connected => {
                         tunnel.status = TunnelStatus::Active;
+                        drop(tunnels); // Release the write lock
+                        drop(connections); // Release the read lock
 
-                        // In a real implementation, you would start the actual SSH tunnel here
-                        // For example, using ssh2 crate to establish the tunnel
+                        // Save to storage
+                        if let Err(e) = self.save_to_storage().await {
+                            eprintln!("Failed to save data: {}", e);
+                        }
 
                         ConnectionResult {
                             success: true,
-                            message: format!("Tunnel '{}' started successfully", tunnel.name),
+                            message: format!("Tunnel '{}' started successfully", tunnel_name),
                             error_code: None,
                         }
                     },
@@ -263,14 +340,20 @@ impl ConnectionManager {
         let mut tunnels = self.tunnels.write().await;
 
         if let Some(tunnel) = tunnels.get_mut(id) {
-            tunnel.status = TunnelStatus::Inactive;
+            // Clone the tunnel name before dropping the lock
+            let tunnel_name = tunnel.name.clone();
 
-            // In a real implementation, you would stop the actual SSH tunnel here
-            // Close the socket connection, terminate the background task, etc.
+            tunnel.status = TunnelStatus::Inactive;
+            drop(tunnels); // Release the lock
+
+            // Save to storage
+            if let Err(e) = self.save_to_storage().await {
+                eprintln!("Failed to save data: {}", e);
+            }
 
             ConnectionResult {
                 success: true,
-                message: format!("Tunnel '{}' stopped successfully", tunnel.name),
+                message: format!("Tunnel '{}' stopped successfully", tunnel_name),
                 error_code: None,
             }
         } else {
@@ -291,19 +374,33 @@ impl Default for ConnectionManager {
 
 // 独立的SSH连接测试函数，用于测试连接数据而不需要保存到数据库
 pub async fn test_ssh_connection(connection: &SSHConnection) -> ConnectionResult {
-    // 在异步上下文中运行同步的 SSH 连接测试
-    tokio::task::spawn_blocking({
-        let connection = connection.clone();
-        move || {
-            test_ssh_connection_sync(&connection)
+    // 设置5秒超时，避免长时间卡住
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        tokio::task::spawn_blocking({
+            let connection = connection.clone();
+            move || {
+                test_ssh_connection_sync(&connection)
+            }
+        })
+    ).await {
+        Ok(result) => {
+            result.unwrap_or_else(|_| {
+                ConnectionResult {
+                    success: false,
+                    message: "SSH测试任务执行失败".to_string(),
+                    error_code: Some("TASK_EXECUTION_ERROR".to_string()),
+                }
+            })
+        },
+        Err(_) => {
+            ConnectionResult {
+                success: false,
+                message: "SSH连接测试超时".to_string(),
+                error_code: Some("TIMEOUT".to_string()),
+            }
         }
-    }).await.unwrap_or_else(|_| {
-        ConnectionResult {
-            success: false,
-            message: "SSH测试任务执行失败".to_string(),
-            error_code: Some("TASK_EXECUTION_ERROR".to_string()),
-        }
-    })
+    }
 }
 
 // 同步的SSH连接测试函数
@@ -347,8 +444,8 @@ fn test_ssh_connection_sync(connection: &SSHConnection) -> ConnectionResult {
         }
     };
 
-    // 设置TCP超时
-    if let Err(e) = tcp.set_read_timeout(Some(std::time::Duration::from_secs(10))) {
+    // 设置TCP超时（缩短为3秒）
+    if let Err(e) = tcp.set_read_timeout(Some(std::time::Duration::from_secs(3))) {
         return ConnectionResult {
             success: false,
             message: format!("设置连接超时失败: {}", e),
@@ -356,7 +453,7 @@ fn test_ssh_connection_sync(connection: &SSHConnection) -> ConnectionResult {
         };
     }
 
-    if let Err(e) = tcp.set_write_timeout(Some(std::time::Duration::from_secs(10))) {
+    if let Err(e) = tcp.set_write_timeout(Some(std::time::Duration::from_secs(3))) {
         return ConnectionResult {
             success: false,
             message: format!("设置写入超时失败: {}", e),

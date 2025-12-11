@@ -1,22 +1,54 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { useConnectionsStore } from './stores/connections';
+import { useSettingsStore } from './stores/settings';
+import { useTheme } from './composables/useTheme';
+import { useI18n } from './composables/useI18n';
 import ConnectionList from './components/ConnectionList.vue';
 import ConnectionForm from './components/ConnectionForm.vue';
 import ConnectionDetail from './components/ConnectionDetail.vue';
 import AddConnectionModal from './components/AddConnectionModal.vue';
 import TunnelModal from './components/TunnelModal.vue';
+import SettingsModal from './components/SettingsModal.vue';
+import TitleBar from './components/TitleBar.vue';
 import type { SSHConnection, SSHTunnel } from './types';
 
 const connectionsStore = useConnectionsStore();
+const settingsStore = useSettingsStore();
+const { theme, resolvedTheme, setTheme, initTheme } = useTheme();
+const { language, translate, setLanguage, initLanguage } = useI18n();
 
-// Initialize the store with data from the backend
+// Initialize the stores with data from the backend
 onMounted(async () => {
+  // Initialize theme and i18n
+  initTheme();
+  initLanguage();
+
   try {
-    await connectionsStore.initialize();
+    await Promise.all([
+      connectionsStore.initialize(),
+      settingsStore.initialize()
+    ]);
+
+    // Sync settings with local theme and language
+    if (settingsStore.settings.theme !== theme.value) {
+      setTheme(settingsStore.settings.theme);
+    }
+    if (settingsStore.settings.language !== language.value) {
+      setLanguage(settingsStore.settings.language);
+    }
   } catch (error) {
-    console.error('Failed to initialize connections store:', error);
+    console.error('Failed to initialize stores:', error);
   }
+});
+
+// Watch settings changes and apply them
+watch(() => settingsStore.settings.theme, (newTheme) => {
+  setTheme(newTheme as 'light' | 'dark' | 'auto');
+});
+
+watch(() => settingsStore.settings.language, (newLanguage) => {
+  setLanguage(newLanguage as 'zh' | 'en');
 });
 
 // UI State
@@ -25,6 +57,7 @@ const showAddModal = ref(false);
 const editingConnection = ref<SSHConnection | null>(null);
 const showTunnelModal = ref(false);
 const tunnelConnectionId = ref('');
+const showSettingsModal = ref(false);
 const leftPanelWidth = ref(240); // 默认左侧面板宽度
 const isDragging = ref(false);
 
@@ -228,14 +261,20 @@ const handleRemoveTunnel = async (id: string) => {
               <i class="el-icon-connection text-white text-lg"></i>
             </div>
             <div>
-              <h1 class="text-xl font-bold text-gray-800">Vesper</h1>
+              <h1 class="text-xl font-bold text-gray-800">{{ translate('app_title') }}</h1>
             </div>
           </div>
           <div class="flex items-center space-x-3">
+            <!-- Settings button -->
+            <el-button type="text" size="default" @click="showSettingsModal = true">
+              <el-icon><Setting /></el-icon>
+              {{ translate('settings') }}
+            </el-button>
+
             <!-- GitHub button placeholder -->
             <el-button type="text" size="default" disabled>
               <el-icon><Link /></el-icon>
-              GitHub
+              {{ translate('github') }}
             </el-button>
           </div>
         </div>
@@ -246,7 +285,7 @@ const handleRemoveTunnel = async (id: string) => {
     <main class="flex-1 overflow-hidden">
       <!-- Loading State -->
       <div v-if="connectionsStore.loading" class="flex justify-center items-center h-full">
-        <el-loading :loading="true" text="正在加载..." />
+        <el-loading :loading="true" :text="translate('loading')" />
       </div>
 
       <!-- Error State -->
@@ -268,7 +307,7 @@ const handleRemoveTunnel = async (id: string) => {
         >
           <!-- Panel Header -->
           <div class="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
-            <h2 class="text-base font-semibold text-gray-800">SSH 连接</h2>
+            <h2 class="text-base font-semibold text-gray-800">{{ translate('ssh_connections') }}</h2>
             <el-badge :value="connectionsStore.connections.length" type="primary">
               <el-icon class="text-gray-500"><Monitor /></el-icon>
             </el-badge>
@@ -329,6 +368,11 @@ const handleRemoveTunnel = async (id: string) => {
       v-model:visible="showTunnelModal"
       :connection-id="tunnelConnectionId"
       @submit="handleTunnelSubmit"
+    />
+
+    <!-- Settings Modal -->
+    <SettingsModal
+      v-model:visible="showSettingsModal"
     />
   </div>
 </template>

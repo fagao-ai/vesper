@@ -41,6 +41,11 @@ export interface CreateTunnelRequest {
 
 // SSH Connection API
 export const sshApi = {
+  // Storage initialization
+  async initializeStorage(): Promise<void> {
+    return await invoke('initialize_storage');
+  },
+
   // Connection CRUD operations
   async createConnection(connection: CreateConnectionRequest): Promise<string> {
     return await invoke('create_connection', { request: connection });
@@ -103,5 +108,18 @@ export const sshApi = {
 
   async stopTunnel(id: string): Promise<ConnectionResult> {
     return await invoke('stop_tunnel', { id });
+  },
+
+  // Settings operations
+  async getSettings(): Promise<any> {
+    return await invoke('get_settings');
+  },
+
+  async updateSettings(settings: any): Promise<void> {
+    return await invoke('update_settings', { settings });
+  },
+
+  async resetSettings(): Promise<any> {
+    return await invoke('reset_settings');
   }
 };

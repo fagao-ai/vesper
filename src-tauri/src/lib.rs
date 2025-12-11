@@ -1,5 +1,7 @@
 mod ssh;
 mod commands;
+mod storage;
+mod settings;
 
 use ssh::ConnectionManager;
 
@@ -10,6 +12,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(ConnectionManager::new())
         .invoke_handler(tauri::generate_handler![
+            // Data Storage
+            commands::initialize_storage,
             // SSH Connection Commands
             commands::create_connection,
             commands::get_connections,
@@ -27,6 +31,10 @@ pub fn run() {
             commands::delete_tunnel,
             commands::start_tunnel,
             commands::stop_tunnel,
+            // Settings Commands
+            commands::get_settings,
+            commands::update_settings,
+            commands::reset_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

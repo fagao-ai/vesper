@@ -15,6 +15,8 @@
         "title": "vesper",
         "width": 800,
         "height": 600,
+        "decorations": true,
+        "transparent": false,
         "hiddenTitle": true
       }
     ],

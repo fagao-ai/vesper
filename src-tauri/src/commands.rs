@@ -1,4 +1,5 @@
 use crate::ssh::{ConnectionManager, SSHConnection, SSHTunnel, AuthMethod, TunnelType, generate_id};
+use crate::settings::AppConfig;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -34,6 +35,12 @@ pub struct CreateTunnelRequest {
     pub remote_host: String,
     pub remote_port: u16,
     pub auto_reconnect: bool,
+}
+
+// Initialize Data Storage
+#[tauri::command]
+pub async fn initialize_storage(manager: State<'_, ConnectionManager>) -> Result<(), String> {
+    manager.initialize().await
 }
 
 // SSH Connection Commands
@@ -237,4 +244,28 @@ pub async fn stop_tunnel(
     manager: State<'_, ConnectionManager>,
 ) -> Result<crate::ssh::ConnectionResult, String> {
     Ok(manager.stop_tunnel(&id).await)
+}
+
+// Settings Commands
+#[tauri::command]
+pub async fn get_settings() -> Result<AppConfig, String> {
+    use crate::storage::DataManager;
+    let data_manager = DataManager::new()?;
+    data_manager.load_settings().await
+}
+
+#[tauri::command]
+pub async fn update_settings(settings: AppConfig) -> Result<(), String> {
+    use crate::storage::DataManager;
+    let data_manager = DataManager::new()?;
+    data_manager.save_settings(&settings).await
+}
+
+#[tauri::command]
+pub async fn reset_settings() -> Result<AppConfig, String> {
+    use crate::storage::DataManager;
+    let data_manager = DataManager::new()?;
+    let default_settings = AppConfig::default();
+    data_manager.save_settings(&default_settings).await?;
+    Ok(default_settings)
 }

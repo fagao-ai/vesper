@@ -325,15 +325,29 @@ export const useConnectionsStore = defineStore('connections', () => {
 
   // Initialize data on store creation
   const initialize = async () => {
-    // 清空本地状态，然后从后端获取数据
-    connections.value = [];
-    tunnels.value = [];
-    error.value = null;
+    try {
+      loading.value = true;
+      error.value = null;
 
-    await Promise.all([
-      fetchConnections(),
-      fetchTunnels()
-    ]);
+      // Initialize storage to load persisted data
+      await sshApi.initializeStorage();
+
+      // 清空本地状态，然后从后端获取数据
+      connections.value = [];
+      tunnels.value = [];
+      error.value = null;
+
+      await Promise.all([
+        fetchConnections(),
+        fetchTunnels()
+      ]);
+    } catch (err) {
+      error.value = err as string;
+      console.error('Failed to initialize store:', err);
+      throw err;
+    } finally {
+      loading.value = false;
+    }
   };
 
   return {
