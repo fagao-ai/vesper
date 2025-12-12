@@ -20,23 +20,24 @@ const { language, translate, setLanguage, initLanguage } = useI18n();
 
 // Initialize the stores with data from the backend
 onMounted(async () => {
-  // Initialize theme and i18n
-  initTheme();
-  initLanguage();
-
   try {
-    await Promise.all([
-      connectionsStore.initialize(),
-      settingsStore.initialize()
-    ]);
+    // 先初始化 settings store 来获取语言和主题设置
+    await settingsStore.initialize();
 
-    // Sync settings with local theme and language
+    // 然后初始化 theme 和 language，使用 backend 的设置
+    initTheme();
+    await initLanguage(); // 现在是异步的
+
+    // 确保本地状态与 backend 设置同步
     if (settingsStore.settings.theme !== theme.value) {
       setTheme(settingsStore.settings.theme);
     }
     if (settingsStore.settings.language !== language.value) {
-      setLanguage(settingsStore.settings.language);
+      setLanguage(settingsStore.settings.language as 'zh' | 'en');
     }
+
+    // 最后初始化 connections store
+    await connectionsStore.initialize();
   } catch (error) {
     console.error('Failed to initialize stores:', error);
   }
@@ -248,6 +249,18 @@ const handleRemoveTunnel = async (id: string) => {
   }
 };
 
+const openGitHub = async () => {
+  try {
+    // 先尝试Tauri的opener插件
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    await openUrl('https://github.com/fagao-ai/vesper');
+  } catch (error) {
+    console.warn('Tauri opener failed, falling back to window.open:', error);
+    // 降级到普通的window.open
+    window.open('https://github.com/fagao-ai/vesper', '_blank');
+  }
+};
+
 </script>
 
 <template>
@@ -271,8 +284,8 @@ const handleRemoveTunnel = async (id: string) => {
               {{ translate('settings') }}
             </el-button>
 
-            <!-- GitHub button placeholder -->
-            <el-button type="text" size="default" disabled>
+            <!-- GitHub button -->
+            <el-button type="text" size="default" @click="openGitHub">
               <el-icon><Link /></el-icon>
               {{ translate('github') }}
             </el-button>

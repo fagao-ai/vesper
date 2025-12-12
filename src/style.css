@@ -39,146 +39,566 @@ html.dark {
 }
 
 html.dark body {
-  background-color: #0f0f0f;
-  color: #e5e5e5;
+  background: #374151;
+  color: #f9fafb;
 }
 
+/* Enhanced glass effect for dark theme */
 html.dark .glass-effect {
-  @apply bg-gray-900/80 backdrop-blur-md border border-gray-700/20;
+  background: rgba(55, 65, 81, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(156, 163, 175, 0.2);
 }
 
 html.dark .gradient-bg {
-  @apply bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900;
+  background: #374151;
 }
 
+/* Improved background colors - simplified for consistency */
 html.dark .bg-white {
-  background-color: #1a1a1a !important;
+  background: #4b5563 !important;
+  border: 1px solid rgba(156, 163, 175, 0.2);
 }
 
 html.dark .bg-gray-50 {
-  background-color: #262626 !important;
+  background: #374151 !important;
+  border: 1px solid rgba(156, 163, 175, 0.2);
 }
 
 html.dark .border-gray-200 {
-  border-color: #404040 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
 html.dark .border-b {
-  border-bottom-color: #404040 !important;
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
 }
 
+/* Enhanced text colors for better contrast */
 html.dark .text-gray-800 {
-  color: #e5e5e5 !important;
+  color: #f3f4f6 !important;
+  font-weight: 400;
 }
 
 html.dark .text-gray-500 {
-  color: #a3a3a3 !important;
+  color: #9ca3af !important;
 }
 
 html.dark .text-gray-600 {
-  color: #d4d4d4 !important;
+  color: #d1d5db !important;
 }
 
 html.dark .text-gray-700 {
   color: #e5e5e5 !important;
 }
 
+/* Improved hover states with subtle transitions */
 html.dark .hover\:bg-gray-50:hover {
-  background-color: #262626 !important;
+  background: linear-gradient(135deg, #2a2a2a 0%, #2f2f2f 100%) !important;
+  border-color: rgba(255, 255, 255, 0.12);
+  transition: all 0.2s ease;
 }
 
 html.dark .hover\:bg-gray-100:hover {
-  background-color: #404040 !important;
+  background: linear-gradient(135deg, #374151 0%, #3f3f3f 100%) !important;
+  border-color: rgba(255, 255, 255, 0.15);
+  transition: all 0.2s ease;
 }
 
-/* Element Plus dark theme adjustments */
+/* Enhanced Element Plus dark theme adjustments - simplified */
 html.dark .el-dialog {
-  background-color: #1a1a1a;
-  border: 1px solid #404040;
+  background: #4b5563;
+  border: 1px solid rgba(156, 163, 175, 0.2);
+  box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2);
 }
 
 html.dark .el-dialog__header {
-  border-bottom: 1px solid #404040;
+  border-bottom: 1px solid rgba(156, 163, 175, 0.2);
+  padding: 20px 24px 16px;
+  background: #374151;
 }
 
 html.dark .el-dialog__title {
-  color: #e5e5e5;
+  color: #f3f4f6;
+  font-weight: 600;
+  font-size: 18px;
+}
+
+html.dark .el-dialog__headerbtn .el-dialog__close {
+  color: #9ca3af;
+  font-size: 20px;
+}
+
+html.dark .el-dialog__headerbtn .el-dialog__close:hover {
+  color: #f3f4f6;
+}
+
+html.dark .el-dialog__body {
+  background: #4b5563;
 }
 
 html.dark .el-input__wrapper {
-  background-color: #262626;
-  border-color: #404040;
+  background: #374151;
+  border: 1px solid rgba(156, 163, 175, 0.2);
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+html.dark .el-input__wrapper:hover {
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+html.dark .el-input__wrapper.is-focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
 
 html.dark .el-input__inner {
-  color: #e5e5e5;
+  color: #f3f4f6;
   background-color: transparent;
+  font-weight: 400;
+}
+
+html.dark .el-input__inner::placeholder {
+  color: #6b7280;
 }
 
 html.dark .el-select .el-input__wrapper {
-  background-color: #262626;
+  background: #374151;
+}
+
+html.dark .el-select-dropdown {
+  background: #4b5563;
+  border: 1px solid rgba(156, 163, 175, 0.2);
+  box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2);
+}
+
+html.dark .el-select-dropdown__item {
+  color: #e5e5e5;
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+html.dark .el-select-dropdown__item:hover {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+html.dark .el-select-dropdown__item.selected {
+  background: #3b82f6;
+  color: #ffffff;
+  font-weight: 500;
 }
 
 html.dark .el-textarea__inner {
-  background-color: #262626;
-  border-color: #404040;
-  color: #e5e5e5;
+  background: #374151;
+  border: 1px solid rgba(156, 163, 175, 0.2);
+  color: #f3f4f6;
+  border-radius: 8px;
+}
+
+html.dark .el-textarea__inner:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
 html.dark .el-form-item__label {
-  color: #d4d4d4;
+  color: #d1d5db;
+  font-weight: 500;
+  margin-bottom: 8px;
 }
 
 html.dark .el-checkbox__label {
   color: #e5e5e5;
+  font-weight: 400;
 }
 
 html.dark .el-radio__label {
   color: #e5e5e5;
+  font-weight: 400;
 }
 
 html.dark .el-switch__label {
   color: #e5e5e5;
+  font-weight: 400;
 }
 
-/* Button dark styles */
+/* Enhanced Button dark styles - simplified */
 html.dark .el-button {
-  --el-button-bg-color: #262626;
-  --el-button-border-color: #404040;
-  --el-button-text-color: #e5e5e5;
+  background: #4b5563;
+  border: 1px solid rgba(156, 163, 175, 0.2);
+  color: #f9fafb;
+  font-weight: 500;
+  border-radius: 8px;
+  transition: all 0.2s ease;
 }
 
 html.dark .el-button:hover {
-  --el-button-hover-bg-color: #404040;
-  --el-button-hover-border-color: #525252;
+  background: #6b7280;
+  border-color: rgba(156, 163, 175, 0.3);
 }
 
 html.dark .el-button--primary {
-  --el-button-bg-color: #3b82f6;
-  --el-button-border-color: #3b82f6;
-  --el-button-text-color: #ffffff;
+  background: #3b82f6;
+  border: 1px solid #3b82f6;
+  color: #ffffff;
+  font-weight: 600;
 }
 
 html.dark .el-button--primary:hover {
-  --el-button-hover-bg-color: #2563eb;
-  --el-button-hover-border-color: #2563eb;
+  background: #2563eb;
+  border-color: #2563eb;
 }
 
-/* Custom scrollbar for dark theme */
+html.dark .el-button--success {
+  background: #10b981;
+  border: 1px solid #10b981;
+  color: #ffffff;
+}
+
+html.dark .el-button--success:hover {
+  background: #059669;
+}
+
+html.dark .el-button--danger {
+  background: #ef4444;
+  border: 1px solid #ef4444;
+  color: #ffffff;
+}
+
+html.dark .el-button--danger:hover {
+  background: #dc2626;
+}
+
+html.dark .el-button.is-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  padding: 0;
+}
+
+/* Enhanced tabs for dark theme */
+html.dark .el-tabs__header {
+  background: linear-gradient(135deg, #1f1f1f 0%, #1a1a1a 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+html.dark .el-tabs__nav-wrap::after {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+html.dark .el-tabs__item {
+  color: #9ca3af;
+  font-weight: 500;
+  padding: 0 24px;
+  height: 44px;
+  line-height: 44px;
+  transition: all 0.2s ease;
+}
+
+html.dark .el-tabs__item:hover {
+  color: #f3f4f6;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(37, 99, 235, 0.1) 100%);
+}
+
+html.dark .el-tabs__item.is-active {
+  color: #3b82f6;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(37, 99, 235, 0.15) 100%);
+  border-bottom: 2px solid #3b82f6;
+}
+
+html.dark .el-tabs__content {
+  background: linear-gradient(135deg, #1a1a1a 0%, #1f1f1f 100%);
+}
+
+/* Enhanced tags for dark theme */
+html.dark .el-tag {
+  background: linear-gradient(135deg, #374151 0%, #3f3f3f 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #e5e5e5;
+  font-weight: 500;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+html.dark .el-tag--success {
+  background: linear-gradient(135deg, #065f46 0%, #047857 100%);
+  border: 1px solid #10b981;
+  color: #86efac;
+}
+
+html.dark .el-tag--warning {
+  background: linear-gradient(135deg, #92400e 0%, #b45309 100%);
+  border: 1px solid #f59e0b;
+  color: #fcd34d;
+}
+
+html.dark .el-tag--danger {
+  background: linear-gradient(135deg, #991b1b 0%, #b91c1c 100%);
+  border: 1px solid #ef4444;
+  color: #fca5a5;
+}
+
+html.dark .el-tag--info {
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+  border: 1px solid #3b82f6;
+  color: #93c5fd;
+}
+
+/* Enhanced empty state for dark theme */
+html.dark .el-empty {
+  background: transparent;
+}
+
+html.dark .el-empty__description {
+  color: #d1d5db;
+  font-weight: 400;
+}
+
+/* Enhanced dropdown for dark theme */
+html.dark .el-dropdown-menu {
+  background: linear-gradient(135deg, #1a1a1a 0%, #1f1f1f 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+  border-radius: 8px;
+  padding: 8px 0;
+}
+
+html.dark .el-dropdown-menu__item {
+  color: #e5e5e5;
+  padding: 10px 16px;
+  transition: all 0.2s ease;
+  font-weight: 400;
+}
+
+html.dark .el-dropdown-menu__item:hover {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
+}
+
+html.dark .el-dropdown-menu__item--divided {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+/* Enhanced message/notification for dark theme */
+html.dark .el-message {
+  background: linear-gradient(135deg, #1a1a1a 0%, #1f1f1f 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4);
+}
+
+html.dark .el-message--success {
+  background: linear-gradient(135deg, #065f46 0%, #047857 100%);
+  border-color: #10b981;
+}
+
+html.dark .el-message--error {
+  background: linear-gradient(135deg, #991b1b 0%, #b91c1c 100%);
+  border-color: #ef4444;
+}
+
+html.dark .el-message--warning {
+  background: linear-gradient(135deg, #92400e 0%, #b45309 100%);
+  border-color: #f59e0b;
+}
+
+/* Enhanced badge for dark theme */
+html.dark .el-badge__content {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  border: 1px solid #ef4444;
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(239, 68, 68, 0.4);
+}
+
+/* Enhanced loading for dark theme */
+html.dark .el-loading-mask {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+}
+
+html.dark .el-loading-spinner {
+  color: #3b82f6;
+}
+
+/* Enhanced divider for dark theme */
+html.dark .el-divider {
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+html.dark .el-divider__text {
+  background: linear-gradient(135deg, #1a1a1a 0%, #1f1f1f 100%);
+  color: #9ca3af;
+}
+
+/* Enhanced custom scrollbar for dark theme */
 html.dark ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 html.dark ::-webkit-scrollbar-track {
-  background: #1a1a1a;
+  background: linear-gradient(135deg, #374151 0%, #4b5563 100%);
+  border-radius: 5px;
 }
 
 html.dark ::-webkit-scrollbar-thumb {
-  background: #404040;
-  border-radius: 4px;
+  background: linear-gradient(135deg, #6b7280 0%, #9ca3af 100%);
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.2s ease;
 }
 
 html.dark ::-webkit-scrollbar-thumb:hover {
-  background: #525252;
+  background: linear-gradient(135deg, #9ca3af 0%, #d1d5db 100%);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+html.dark ::-webkit-scrollbar-corner {
+  background: linear-gradient(135deg, #374151 0%, #4b5563 100%);
+}
+
+/* Component-specific dark theme enhancements */
+
+/* Connection list item enhancements - simplified */
+html.dark .connection-item {
+  background: #4b5563;
+  border: 1px solid rgba(156, 163, 175, 0.2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+html.dark .connection-item:hover {
+  background: #6b7280;
+  border-color: rgba(156, 163, 175, 0.3);
+}
+
+html.dark .connection-item.selected {
+  background: #374151;
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.1);
+}
+
+html.dark .connection-item.connected {
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+html.dark .connection-item.connected.selected {
+  background: #065f46;
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+html.dark .connection-item.error {
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+html.dark .connection-item.error.selected {
+  background: #991b1b;
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+/* Connection detail panel enhancements */
+html.dark .el-tabs__content .p-6 {
+  background: #374151;
+}
+
+html.dark .bg-gray-50 {
+  background: #374151 !important;
+  border: 1px solid rgba(156, 163, 175, 0.2);
+}
+
+/* Header enhancements */
+html.dark header {
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark .glass-effect header,
+html.dark .glass-effect[style*="border-bottom"] {
+  border-bottom-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+/* Tunnel list enhancements */
+html.dark .tunnel-item {
+  background: linear-gradient(135deg, #1f1f1f 0%, #242424 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+html.dark .tunnel-item:hover {
+  background: linear-gradient(135deg, #262626 0%, #2a2a2a 100%);
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* Settings form enhancements */
+html.dark .settings-section {
+  background: linear-gradient(135deg, #1a1a1a 0%, #1f1f1f 100%);
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+html.dark .settings-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+html.dark .form-item {
+  background: linear-gradient(135deg, #262626 0%, #2a2a2a 100%);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+html.dark .form-label {
+  color: #d1d5db;
+  font-weight: 500;
+}
+
+/* Responsive enhancements for mobile */
+@media (max-width: 768px) {
+  html.dark .connection-item:hover {
+    transform: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+
+  html.dark .el-button:hover {
+    transform: none;
+  }
+}
+
+/* Animation improvements for dark theme */
+@keyframes fadeInDark {
+  from {
+    opacity: 0;
+    background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+  }
+  to {
+    opacity: 1;
+    background: linear-gradient(135deg, #1a1a1a 0%, #1f1f1f 100%);
+  }
+}
+
+html.dark .fade-enter-active {
+  animation: fadeInDark 0.3s ease-out;
+}
+
+html.dark .list-fade-enter-active {
+  animation: fadeInDark 0.4s ease-out;
+}
+
+/* Special effects for active states */
+html.dark .el-button:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+html.dark .el-input__wrapper:focus-within {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }

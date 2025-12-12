@@ -3,7 +3,7 @@ import { ref, watch } from 'vue';
 import { useSettingsStore, type AppSettings } from '../stores/settings';
 import { useI18n } from '../composables/useI18n';
 
-const { translate, language } = useI18n();
+const { translate, language, setLanguage } = useI18n();
 
 interface Props {
   visible: boolean;
@@ -33,7 +33,17 @@ watch(() => props.visible, (newVal) => {
 const handleSave = async () => {
   try {
     saving.value = true;
+
+    // 记录保存前的语言设置
+    const oldLanguage = settingsStore.settings.language;
+
     await settingsStore.updateSettings(formData.value);
+
+    // 如果语言设置发生变化，立即应用新语言
+    if (formData.value.language !== oldLanguage) {
+      setLanguage(formData.value.language as 'zh' | 'en');
+    }
+
     emit('update:visible', false);
   } catch (error) {
     console.error('Failed to save settings:', error);

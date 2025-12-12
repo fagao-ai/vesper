@@ -2,10 +2,10 @@
   <div class="h-full flex flex-col">
     <!-- Empty State -->
     <div v-if="connections.length === 0" class="flex-1 flex items-center justify-center">
-      <el-empty description="还没有配置任何 SSH 连接" class="text-center">
+      <el-empty :description="translate('no_connections')" class="text-center">
         <el-button type="primary" @click="debugEmit('add-connection')">
           <el-icon class="mr-2"><Plus /></el-icon>
-          添加第一个连接
+          {{ translate('add_first_connection') }}
         </el-button>
       </el-empty>
     </div>
@@ -21,7 +21,7 @@
           size="default"
         >
           <el-icon class="mr-2"><Plus /></el-icon>
-          添加新连接
+          {{ translate('add_new_connection') }}
         </el-button>
       </div>
 
@@ -78,7 +78,7 @@
                 <!-- Tunnel Count -->
                 <div v-if="getTunnels(connection.id).length > 0" class="mt-2 flex items-center text-xs text-gray-500">
                   <el-icon class="mr-1 scale-90"><Link /></el-icon>
-                  <span>{{ getTunnels(connection.id).length }} 个隧道</span>
+                  <span>{{ getTunnels(connection.id).length }}{{ translate('tunnel_count') }}</span>
                   <el-tag
                     v-for="tunnel in getTunnels(connection.id).filter(t => t.status === 'active')"
                     :key="tunnel.id"
@@ -120,15 +120,15 @@
                     <el-dropdown-menu>
                       <el-dropdown-item :command="`test-${connection.id}`">
                         <el-icon class="mr-2"><Connection /></el-icon>
-                        测试连接
+                        {{ translate('test_connection') }}
                       </el-dropdown-item>
                       <el-dropdown-item :command="`edit-${connection.id}`">
                         <el-icon class="mr-2"><Edit /></el-icon>
-                        编辑
+                        {{ translate('edit_connection') }}
                       </el-dropdown-item>
                       <el-dropdown-item :command="`tunnel-${connection.id}`">
                         <el-icon class="mr-2"><Link /></el-icon>
-                        添加隧道
+                        {{ translate('add_tunnel') }}
                       </el-dropdown-item>
                       <el-dropdown-item
                         :command="`delete-${connection.id}`"
@@ -136,7 +136,7 @@
                         class="text-red-600"
                       >
                         <el-icon class="mr-2"><Delete /></el-icon>
-                        删除
+                        {{ translate('delete_connection') }}
                       </el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
@@ -154,6 +154,7 @@
 import { ref } from 'vue';
 import { ElMessageBox, ElMessage } from 'element-plus';
 import { useConnectionsStore } from '../stores/connections';
+import { useI18n } from '../composables/useI18n';
 import type { SSHConnection, SSHTunnel } from '../types';
 
 interface Props {
@@ -176,6 +177,7 @@ const emit = defineEmits<{
   'stop-tunnel': [id: string];
 }>();
 
+const { translate } = useI18n();
 const connectionsStore = useConnectionsStore();
 
 const getTunnels = (connectionId: string) => {
@@ -184,10 +186,10 @@ const getTunnels = (connectionId: string) => {
 
 const getStatusText = (status: string) => {
   const statusMap = {
-    'disconnected': '已断开',
-    'connecting': '连接中',
-    'connected': '已连接',
-    'error': '连接错误'
+    'disconnected': translate('status_disconnected'),
+    'connecting': translate('status_connecting'),
+    'connected': translate('status_connected'),
+    'error': translate('status_error')
   };
   return statusMap[status as keyof typeof statusMap] || status;
 };
@@ -272,22 +274,22 @@ const handleTunnelAction = async (command: string) => {
 const handleDelete = async (id: string) => {
   try {
     await ElMessageBox.confirm(
-      '确定要删除这个连接吗？相关的隧道也会被删除。',
-      '确认删除',
+      translate('confirm_delete_message'),
+      translate('confirm_delete'),
       {
-        confirmButtonText: '删除',
-        cancelButtonText: '取消',
+        confirmButtonText: translate('delete_connection'),
+        cancelButtonText: translate('cancel'),
         type: 'warning',
       }
     );
 
     // 触发父组件的删除事件
     emit('delete-connection', id);
-    ElMessage.success('连接删除成功');
+    ElMessage.success(translate('connection_deleted_successfully'));
   } catch (error) {
     if (error !== 'cancel') {
       console.error('Failed to delete connection:', error);
-      ElMessage.error(`删除连接失败: ${error}`);
+      ElMessage.error(`${translate('delete_connection')}失败: ${error}`);
     }
   }
 };
@@ -296,30 +298,30 @@ const handleTestConnection = async (id: string) => {
   try {
     const result = await connectionsStore.testConnection(id);
     if (result.success) {
-      ElMessage.success('连接测试成功！');
+      ElMessage.success(translate('connection_test_successful'));
     } else {
-      ElMessage.error(`连接测试失败: ${result.message}`);
+      ElMessage.error(`${translate('test_connection')}失败: ${result.message}`);
     }
   } catch (error) {
     console.error('Failed to test connection:', error);
-    ElMessage.error(`测试连接失败: ${error}`);
+    ElMessage.error(`测试${translate('test_connection')}失败: ${error}`);
   }
 };
 
 const handleRemoveTunnel = async (id: string) => {
   try {
     await ElMessageBox.confirm(
-      '确定要删除这个隧道吗？',
-      '确认删除',
+      translate('confirm_delete_tunnel_message'),
+      translate('confirm_delete'),
       {
-        confirmButtonText: '删除',
-        cancelButtonText: '取消',
+        confirmButtonText: translate('delete_connection'),
+        cancelButtonText: translate('cancel'),
         type: 'warning',
       }
     );
 
     await connectionsStore.removeTunnel(id);
-    ElMessage.success('隧道删除成功');
+    ElMessage.success(translate('tunnel_deleted_successfully'));
   } catch (error) {
     if (error !== 'cancel') {
       console.error('Failed to remove tunnel:', error);

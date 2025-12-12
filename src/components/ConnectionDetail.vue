@@ -20,7 +20,7 @@
                 <el-icon class="mr-1" v-else-if="connection.status === 'error'"><Close /></el-icon>
                 {{ getStatusText(connection.status) }}
               </el-tag>
-              <span class="text-sm text-gray-500">{{ connection.authMethod === 'password' ? '密码认证' : '密钥认证' }}</span>
+              <span class="text-sm text-gray-500">{{ connection.authMethod === 'password' ? translate('auth_method_password') : translate('auth_method_key') }}</span>
             </div>
           </div>
         </div>
@@ -33,7 +33,7 @@
             @click="$emit('connect', connection.id)"
           >
             <el-icon class="mr-1"><VideoPlay /></el-icon>
-            连接
+            {{ translate('connect') }}
           </el-button>
           <el-button
             v-else-if="connection.status === 'connected'"
@@ -42,14 +42,14 @@
             @click="$emit('disconnect', connection.id)"
           >
             <el-icon class="mr-1"><VideoPause /></el-icon>
-            断开
+            {{ translate('disconnect') }}
           </el-button>
           <el-button
             v-else-if="connection.status === 'connecting'"
             loading
             disabled
           >
-            连接中...
+            {{ translate('connecting') }}
           </el-button>
         </div>
       </div>
@@ -57,46 +57,46 @@
 
     <!-- Empty State -->
     <div v-else class="flex-1 flex items-center justify-center">
-      <el-empty description="请选择一个SSH连接查看详情" />
+      <el-empty :description="translate('select_connection')" />
     </div>
 
     <!-- Content -->
     <div v-if="connection" class="flex-1 overflow-y-auto">
       <el-tabs v-model="activeTab" class="h-full flex flex-col">
-        <el-tab-pane label="连接信息" name="info">
+        <el-tab-pane :label="translate('connection_info')" name="info">
           <div class="p-6 space-y-6">
             <!-- Basic Info -->
             <div>
               <h4 class="text-base font-semibold text-gray-800 mb-4 flex items-center">
                 <el-icon class="mr-2 text-blue-500"><InfoFilled /></el-icon>
-                基本信息
+                {{ translate('basic_info') }}
               </h4>
               <div class="bg-gray-50 rounded-lg p-4 space-y-3">
                 <div class="flex items-center justify-between">
                   <span class="text-gray-600 flex items-center">
                     <el-icon class="mr-2"><Location /></el-icon>
-                    主机地址
+                    {{ translate('host_address') }}
                   </span>
                   <span class="font-mono text-sm font-medium">{{ connection.host }}:{{ connection.port }}</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="text-gray-600 flex items-center">
                     <el-icon class="mr-2"><User /></el-icon>
-                    用户名
+                    {{ translate('username') }}
                   </span>
                   <span class="font-mono text-sm font-medium">{{ connection.username }}</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="text-gray-600 flex items-center">
                     <el-icon class="mr-2"><Key /></el-icon>
-                    认证方式
+                    {{ translate('auth_method') }}
                   </span>
-                  <span class="text-sm font-medium">{{ connection.authMethod === 'password' ? '密码认证' : '密钥认证' }}</span>
+                  <span class="text-sm font-medium">{{ connection.authMethod === 'password' ? translate('auth_method_password') : translate('auth_method_key') }}</span>
                 </div>
                 <div v-if="connection.lastConnected" class="flex items-center justify-between">
                   <span class="text-gray-600 flex items-center">
                     <el-icon class="mr-2"><Clock /></el-icon>
-                    最后连接
+                    {{ translate('last_connected') }}
                   </span>
                   <span class="text-sm font-medium">{{ formatDate(connection.lastConnected) }}</span>
                 </div>
@@ -107,16 +107,16 @@
             <div>
               <h4 class="text-base font-semibold text-gray-800 mb-4 flex items-center">
                 <el-icon class="mr-2 text-purple-500"><Setting /></el-icon>
-                高级信息
+                {{ translate('advanced_info') }}
               </h4>
               <div class="bg-gray-50 rounded-lg p-4">
                 <div class="grid grid-cols-2 gap-4 text-sm">
                   <div>
-                    <span class="text-gray-600">连接ID:</span>
+                    <span class="text-gray-600">{{ translate('connection_id') }}:</span>
                     <span class="ml-2 font-mono font-medium">{{ connection.id.slice(0, 8) }}...</span>
                   </div>
                   <div>
-                    <span class="text-gray-600">创建时间:</span>
+                    <span class="text-gray-600">{{ translate('created_time') }}:</span>
                     <span class="ml-2 font-medium">{{ formatDate(connection.createdAt) }}</span>
                   </div>
                 </div>
@@ -128,7 +128,7 @@
         <el-tab-pane name="tunnels">
           <template #label>
             <span class="flex items-center">
-              隧道管理
+              {{ translate('tunnel_management') }}
               <el-badge v-if="tunnels.length > 0" :value="tunnels.length" class="ml-2" />
             </span>
           </template>
@@ -138,19 +138,19 @@
             <div class="flex items-center justify-between mb-6">
               <h4 class="text-base font-semibold text-gray-800 flex items-center">
                 <el-icon class="mr-2 text-green-500"><Link /></el-icon>
-                SSH 隧道
+                {{ translate('ssh_tunnels') }}
               </h4>
               <el-button type="primary" size="small" @click="$emit('add-tunnel', connection.id)">
                 <el-icon class="mr-1"><Plus /></el-icon>
-                添加隧道
+                {{ translate('add_tunnel') }}
               </el-button>
             </div>
 
             <!-- Tunnels List -->
             <div v-if="tunnels.length === 0" class="text-center py-12">
               <el-icon class="text-6xl text-gray-300 mb-4"><Link /></el-icon>
-              <p class="text-gray-500">暂无隧道配置</p>
-              <el-button type="text" @click="$emit('add-tunnel', connection.id)">创建第一个隧道</el-button>
+              <p class="text-gray-500">{{ translate('no_tunnel_config') }}</p>
+              <el-button type="text" @click="$emit('add-tunnel', connection.id)">{{ translate('create_first_tunnel') }}</el-button>
             </div>
 
             <div v-else class="space-y-4">
@@ -229,6 +229,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { ElMessageBox, ElMessage } from 'element-plus';
+import { useI18n } from '../composables/useI18n';
 import type { SSHConnection, SSHTunnel } from '../types';
 
 interface Props {
@@ -247,14 +248,15 @@ const emit = defineEmits<{
   'remove-tunnel': [id: string];
 }>();
 
+const { translate } = useI18n();
 const activeTab = ref('info');
 
 const getStatusText = (status: string) => {
   const statusMap = {
-    'disconnected': '已断开',
-    'connecting': '连接中',
-    'connected': '已连接',
-    'error': '连接错误'
+    'disconnected': translate('status_disconnected'),
+    'connecting': translate('status_connecting'),
+    'connected': translate('status_connected'),
+    'error': translate('status_error')
   };
   return statusMap[status as keyof typeof statusMap] || status;
 };
@@ -306,7 +308,7 @@ const handleTunnelAction = async (command: string) => {
   switch (action) {
     case 'edit':
       // TODO: Implement edit tunnel functionality
-      ElMessage.info('编辑隧道功能即将推出');
+      ElMessage.info(translate('edit_tunnel_coming_soon'));
       break;
     case 'remove':
       await handleRemoveTunnel(id);
@@ -317,17 +319,17 @@ const handleTunnelAction = async (command: string) => {
 const handleRemoveTunnel = async (id: string) => {
   try {
     await ElMessageBox.confirm(
-      '确定要删除这个隧道吗？',
-      '确认删除',
+      translate('confirm_delete_tunnel_message'),
+      translate('confirm_delete'),
       {
-        confirmButtonText: '删除',
-        cancelButtonText: '取消',
+        confirmButtonText: translate('delete_connection'),
+        cancelButtonText: translate('cancel'),
         type: 'warning',
       }
     );
 
     emit('remove-tunnel', id);
-    ElMessage.success('隧道删除成功');
+    ElMessage.success(translate('tunnel_deleted_successfully'));
   } catch (error) {
     if (error !== 'cancel') {
       console.error('Failed to remove tunnel:', error);
