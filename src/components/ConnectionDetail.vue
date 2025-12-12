@@ -173,7 +173,7 @@
                         {{ tunnel.status === 'active' ? '运行中' : '已停止' }}
                       </el-tag>
                       <el-tag size="small" effect="plain">
-                        {{ getTunnelTypeText(tunnel.type) }}
+                        {{ getTunnelTypeText(tunnel.tunnel_type) }}
                       </el-tag>
                     </div>
                     <div class="text-sm text-gray-600 font-mono">
@@ -243,6 +243,7 @@ const emit = defineEmits<{
   connect: [id: string];
   disconnect: [id: string];
   'add-tunnel': [connectionId: string];
+  'edit-tunnel': [tunnel: SSHTunnel];
   'start-tunnel': [id: string];
   'stop-tunnel': [id: string];
   'remove-tunnel': [id: string];
@@ -281,13 +282,13 @@ const getTunnelTypeText = (type: string) => {
 };
 
 const formatTunnelConfig = (tunnel: SSHTunnel) => {
-  switch (tunnel.type) {
+  switch (tunnel.tunnel_type) {
     case 'local':
-      return `本地 ${tunnel.localPort} → ${tunnel.remoteHost}:${tunnel.remotePort}`;
+      return `本地 ${tunnel.local_port} → ${tunnel.remote_host}:${tunnel.remote_port}`;
     case 'remote':
-      return `远程 ${tunnel.localPort} → ${tunnel.remoteHost}:${tunnel.remotePort}`;
+      return `远程 ${tunnel.local_port} → ${tunnel.remote_host}:${tunnel.remote_port}`;
     case 'dynamic':
-      return `SOCKS 代理 localhost:${tunnel.localPort}`;
+      return `SOCKS 代理 localhost:${tunnel.local_port}`;
     default:
       return '';
   }
@@ -303,12 +304,21 @@ const formatDate = (dateString?: string) => {
 };
 
 const handleTunnelAction = async (command: string) => {
-  const [action, id] = command.split('-');
+  // 使用 split 只分割一次，因为 UUID 中也包含连字符
+  const firstDashIndex = command.indexOf('-');
+  const action = command.substring(0, firstDashIndex);
+  const id = command.substring(firstDashIndex + 1);
+
+  console.log('handleTunnelAction - action:', action, 'id:', id, '(length:', id.length, ')');
 
   switch (action) {
     case 'edit':
-      // TODO: Implement edit tunnel functionality
-      ElMessage.info(translate('edit_tunnel_coming_soon'));
+      const tunnel = props.tunnels.find(t => t.id === id);
+      if (tunnel) {
+        emit('edit-tunnel', tunnel);
+      } else {
+        ElMessage.error('隧道未找到');
+      }
       break;
     case 'remove':
       await handleRemoveTunnel(id);
@@ -318,6 +328,7 @@ const handleTunnelAction = async (command: string) => {
 
 const handleRemoveTunnel = async (id: string) => {
   try {
+    console.log('Removing tunnel with ID:', id);
     await ElMessageBox.confirm(
       translate('confirm_delete_tunnel_message'),
       translate('confirm_delete'),

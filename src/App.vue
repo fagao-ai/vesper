@@ -9,6 +9,7 @@ import ConnectionForm from './components/ConnectionForm.vue';
 import ConnectionDetail from './components/ConnectionDetail.vue';
 import AddConnectionModal from './components/AddConnectionModal.vue';
 import TunnelModal from './components/TunnelModal.vue';
+import EditTunnelModal from './components/EditTunnelModal.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import TitleBar from './components/TitleBar.vue';
 import type { SSHConnection, SSHTunnel } from './types';
@@ -58,6 +59,8 @@ const showAddModal = ref(false);
 const editingConnection = ref<SSHConnection | null>(null);
 const showTunnelModal = ref(false);
 const tunnelConnectionId = ref('');
+const showEditTunnelModal = ref(false);
+const editingTunnel = ref<SSHTunnel | null>(null);
 const showSettingsModal = ref(false);
 const leftPanelWidth = ref(240); // 默认左侧面板宽度
 const isDragging = ref(false);
@@ -240,6 +243,34 @@ const handleStopTunnel = async (id: string) => {
   }
 };
 
+const handleEditTunnel = (tunnel: SSHTunnel) => {
+  editingTunnel.value = tunnel;
+  showEditTunnelModal.value = true;
+};
+
+const handleEditTunnelSubmit = async (tunnelData: SSHTunnel) => {
+  try {
+    if (!tunnelData.id) {
+      throw new Error('隧道ID不能为空');
+    }
+
+    await connectionsStore.updateTunnel(tunnelData.id, {
+      name: tunnelData.name,
+      tunnel_type: tunnelData.tunnel_type,
+      local_port: tunnelData.local_port,
+      remote_host: tunnelData.remote_host,
+      remote_port: tunnelData.remote_port,
+      auto_reconnect: tunnelData.auto_reconnect
+    });
+
+    showEditTunnelModal.value = false;
+    editingTunnel.value = null;
+  } catch (error) {
+    console.error('Failed to update tunnel:', error);
+    alert(`更新隧道失败: ${error}`);
+  }
+};
+
 const handleRemoveTunnel = async (id: string) => {
   try {
     await connectionsStore.removeTunnel(id);
@@ -357,8 +388,9 @@ const openGitHub = async () => {
           <div class="flex-1 overflow-hidden">
             <ConnectionDetail
               :connection="selectedConnection"
-              :tunnels="selectedConnection ? connectionsStore.tunnels.filter(t => t.connectionId === selectedConnection.id) : []"
+              :tunnels="selectedConnection ? connectionsStore.tunnels.filter(t => t.connection_id === selectedConnection.id) : []"
               @add-tunnel="handleAddTunnel"
+              @edit-tunnel="handleEditTunnel"
               @start-tunnel="handleStartTunnel"
               @stop-tunnel="handleStopTunnel"
               @remove-tunnel="handleRemoveTunnel"
@@ -381,6 +413,13 @@ const openGitHub = async () => {
       v-model:visible="showTunnelModal"
       :connection-id="tunnelConnectionId"
       @submit="handleTunnelSubmit"
+    />
+
+    <!-- Edit Tunnel Modal -->
+    <EditTunnelModal
+      v-model:visible="showEditTunnelModal"
+      :tunnel="editingTunnel"
+      @submit="handleEditTunnelSubmit"
     />
 
     <!-- Settings Modal -->

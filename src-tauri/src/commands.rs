@@ -37,10 +37,25 @@ pub struct CreateTunnelRequest {
     pub auto_reconnect: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateTunnelRequest {
+    pub id: String,
+    pub name: String,
+    pub connection_id: String,
+    pub tunnel_type: String,
+    pub local_port: u16,
+    pub remote_host: String,
+    pub remote_port: u16,
+    pub auto_reconnect: bool,
+}
+
 // Initialize Data Storage
 #[tauri::command]
 pub async fn initialize_storage(manager: State<'_, ConnectionManager>) -> Result<(), String> {
-    manager.initialize().await
+    eprintln!("initialize_storage command called");
+    let result = manager.initialize().await;
+    eprintln!("initialize_storage command completed with result: {:?}", result);
+    result
 }
 
 // SSH Connection Commands
@@ -208,6 +223,39 @@ pub async fn create_tunnel(
 }
 
 #[tauri::command]
+pub async fn update_tunnel(
+    request: UpdateTunnelRequest,
+    manager: State<'_, ConnectionManager>,
+) -> Result<(), String> {
+    // Get existing tunnels to find the current status
+    let existing_tunnels = manager.get_tunnels().await;
+    let existing_tunnel = existing_tunnels.iter()
+        .find(|t| t.id == request.id)
+        .ok_or("Tunnel not found")?;
+
+    let tunnel_type = match request.tunnel_type.as_str() {
+        "local" => TunnelType::Local,
+        "remote" => TunnelType::Remote,
+        "dynamic" => TunnelType::Dynamic,
+        _ => return Err("Invalid tunnel type".to_string()),
+    };
+
+    let updated_tunnel = SSHTunnel {
+        id: request.id,
+        name: request.name,
+        connection_id: request.connection_id,
+        tunnel_type,
+        local_port: request.local_port,
+        remote_host: request.remote_host,
+        remote_port: request.remote_port,
+        status: existing_tunnel.status.clone(), // Preserve the current status
+        auto_reconnect: request.auto_reconnect,
+    };
+
+    manager.update_tunnel(&updated_tunnel.id.clone(), updated_tunnel).await
+}
+
+#[tauri::command]
 pub async fn get_tunnels(
     manager: State<'_, ConnectionManager>,
 ) -> Result<Vec<SSHTunnel>, String> {
@@ -227,6 +275,7 @@ pub async fn delete_tunnel(
     id: String,
     manager: State<'_, ConnectionManager>,
 ) -> Result<(), String> {
+    eprintln!("delete_tunnel command received ID: {} (length: {})", id, id.len());
     manager.remove_tunnel(&id).await
 }
 

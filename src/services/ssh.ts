@@ -39,6 +39,17 @@ export interface CreateTunnelRequest {
   auto_reconnect: boolean;
 }
 
+export interface UpdateTunnelRequest {
+  id: string;
+  name: string;
+  connection_id: string;
+  tunnel_type: 'local' | 'remote' | 'dynamic';
+  local_port: number;
+  remote_host: string;
+  remote_port: number;
+  auto_reconnect: boolean;
+}
+
 // SSH Connection API
 export const sshApi = {
   // Storage initialization
@@ -89,6 +100,10 @@ export const sshApi = {
     return await invoke('create_tunnel', { request: tunnel });
   },
 
+  async updateTunnel(tunnel: UpdateTunnelRequest): Promise<void> {
+    return await invoke('update_tunnel', { request: tunnel });
+  },
+
   async getTunnels(): Promise<SSHTunnel[]> {
     return await invoke('get_tunnels');
   },
@@ -98,16 +113,18 @@ export const sshApi = {
   },
 
   async deleteTunnel(id: string): Promise<void> {
-    return await invoke('delete_tunnel', { id });
+    console.log('Calling delete_tunnel with ID:', id, '(length:', id.length, ')');
+    // Ensure we're passing the ID as a string directly
+    return await invoke('delete_tunnel', { id: String(id) });
   },
 
   // Tunnel control operations
   async startTunnel(id: string): Promise<ConnectionResult> {
-    return await invoke('start_tunnel', { id });
+    return await invoke('start_tunnel', { id: String(id) });
   },
 
   async stopTunnel(id: string): Promise<ConnectionResult> {
-    return await invoke('stop_tunnel', { id });
+    return await invoke('stop_tunnel', { id: String(id) });
   },
 
   // Settings operations

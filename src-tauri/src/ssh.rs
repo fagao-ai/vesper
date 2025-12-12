@@ -106,7 +106,16 @@ impl ConnectionManager {
 
     pub async fn initialize(&self) -> Result<(), String> {
         // Load data from storage on startup
-        self.load_from_storage().await
+        eprintln!("Initializing ConnectionManager...");
+        let result = self.load_from_storage().await;
+        if let Err(ref e) = result {
+            eprintln!("Failed to initialize ConnectionManager: {}", e);
+        } else {
+            let connections = self.connections.read().await;
+            let tunnels = self.tunnels.read().await;
+            eprintln!("Loaded {} connections and {} tunnels from storage", connections.len(), tunnels.len());
+        }
+        result
     }
 
     pub async fn add_connection(&self, connection: SSHConnection) -> Result<String, String> {
@@ -277,14 +286,74 @@ impl ConnectionManager {
 
     pub async fn remove_tunnel(&self, id: &str) -> Result<(), String> {
         let mut tunnels = self.tunnels.write().await;
-        tunnels.remove(id).ok_or("Tunnel not found")?;
 
-        // Save to storage
-        if let Err(e) = self.save_to_storage().await {
-            eprintln!("Failed to save data: {}", e);
+        // Debug: Print all tunnel IDs before removal
+        let tunnel_ids: Vec<String> = tunnels.keys().cloned().collect();
+        eprintln!("Available tunnel IDs: {:?}", tunnel_ids);
+        eprintln!("Attempting to remove tunnel with ID: {}", id);
+
+        match tunnels.remove(id) {
+            Some(tunnel) => {
+                eprintln!("Successfully removed tunnel: {}", tunnel.name);
+
+                // Clone tunnels before releasing the lock to avoid deadlock
+                let tunnels_clone = tunnels.clone();
+                let connections_clone = self.connections.read().await.clone();
+
+                // Release the lock before saving to storage
+                drop(tunnels);
+
+                // Save to storage without holding the tunnel lock
+                use crate::storage::DataManager;
+                match DataManager::new() {
+                    Ok(data_manager) => {
+                        if let Err(e) = data_manager.save_connections_and_tunnels(&connections_clone, &tunnels_clone).await {
+                            eprintln!("Failed to save data: {}", e);
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("Failed to create data manager: {}", e);
+                    }
+                }
+
+                Ok(())
+            },
+            None => {
+                eprintln!("Tunnel not found with ID: {}", id);
+                Err(format!("Tunnel not found with ID: {}", id))
+            }
         }
+    }
 
-        Ok(())
+    pub async fn update_tunnel(&self, id: &str, updates: SSHTunnel) -> Result<(), String> {
+        let mut tunnels = self.tunnels.write().await;
+        if tunnels.contains_key(id) {
+            tunnels.insert(id.to_string(), updates);
+
+            // Clone data before releasing the lock
+            let tunnels_clone = tunnels.clone();
+            let connections_clone = self.connections.read().await.clone();
+
+            // Release the lock before saving to storage
+            drop(tunnels);
+
+            // Save to storage without holding the tunnel lock
+            use crate::storage::DataManager;
+            match DataManager::new() {
+                Ok(data_manager) => {
+                    if let Err(e) = data_manager.save_connections_and_tunnels(&connections_clone, &tunnels_clone).await {
+                        eprintln!("Failed to save data: {}", e);
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Failed to create data manager: {}", e);
+                }
+            }
+
+            Ok(())
+        } else {
+            Err("Tunnel not found".to_string())
+        }
     }
 
     pub async fn start_tunnel(&self, id: &str) -> ConnectionResult {
@@ -300,12 +369,25 @@ impl ConnectionManager {
                 match connection.status {
                     ConnectionStatus::Connected => {
                         tunnel.status = TunnelStatus::Active;
+
+                        // Clone data before releasing the locks
+                        let tunnels_clone = tunnels.clone();
+                        let connections_clone = connections.clone();
+
                         drop(tunnels); // Release the write lock
                         drop(connections); // Release the read lock
 
-                        // Save to storage
-                        if let Err(e) = self.save_to_storage().await {
-                            eprintln!("Failed to save data: {}", e);
+                        // Save to storage without holding any locks
+                        use crate::storage::DataManager;
+                        match DataManager::new() {
+                            Ok(data_manager) => {
+                                if let Err(e) = data_manager.save_connections_and_tunnels(&connections_clone, &tunnels_clone).await {
+                                    eprintln!("Failed to save data: {}", e);
+                                }
+                            },
+                            Err(e) => {
+                                eprintln!("Failed to create data manager: {}", e);
+                            }
                         }
 
                         ConnectionResult {
@@ -344,11 +426,25 @@ impl ConnectionManager {
             let tunnel_name = tunnel.name.clone();
 
             tunnel.status = TunnelStatus::Inactive;
-            drop(tunnels); // Release the lock
 
-            // Save to storage
-            if let Err(e) = self.save_to_storage().await {
-                eprintln!("Failed to save data: {}", e);
+            // Clone data before releasing the lock
+            let tunnels_clone = tunnels.clone();
+            let connections_clone = self.connections.read().await.clone();
+
+            // Release the lock before saving to storage
+            drop(tunnels);
+
+            // Save to storage without holding the tunnel lock
+            use crate::storage::DataManager;
+            match DataManager::new() {
+                Ok(data_manager) => {
+                    if let Err(e) = data_manager.save_connections_and_tunnels(&connections_clone, &tunnels_clone).await {
+                        eprintln!("Failed to save data: {}", e);
+                    }
+                },
+                Err(e) => {
+                    eprintln!("Failed to create data manager: {}", e);
+                }
             }
 
             ConnectionResult {

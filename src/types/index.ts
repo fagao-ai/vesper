@@ -4,23 +4,23 @@ export interface SSHConnection {
   host: string;
   port: number;
   username: string;
-  authMethod: 'password' | 'key';
+  auth_method: 'password' | 'key';
   password?: string;
-  keyPath?: string;
+  key_path?: string;
   status: 'disconnected' | 'connecting' | 'connected' | 'error';
-  lastConnected?: Date;
+  last_connected?: Date;
 }
 
 export interface SSHTunnel {
   id: string;
   name: string;
-  connectionId: string;
-  type: 'local' | 'remote' | 'dynamic';
-  localPort: number;
-  remoteHost: string;
-  remotePort: number;
+  connection_id: string;
+  tunnel_type: 'local' | 'remote' | 'dynamic';
+  local_port: number;
+  remote_host: string;
+  remote_port: number;
   status: 'inactive' | 'active' | 'error';
-  autoReconnect: boolean;
+  auto_reconnect: boolean;
 }
 
 export interface AppConfig {

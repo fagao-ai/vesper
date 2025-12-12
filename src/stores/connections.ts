@@ -23,7 +23,7 @@ export const useConnectionsStore = defineStore('connections', () => {
     connections.value.find(conn => conn.id === id);
 
   const getTunnelsByConnectionId = (connectionId: string) =>
-    tunnels.value.filter(tunnel => tunnel.connectionId === connectionId);
+    tunnels.value.filter(tunnel => tunnel.connection_id === connectionId);
 
   // Actions
   const fetchConnections = async () => {
@@ -43,7 +43,9 @@ export const useConnectionsStore = defineStore('connections', () => {
     try {
       loading.value = true;
       error.value = null;
-      tunnels.value = await sshApi.getTunnels();
+      const tunnelsData = await sshApi.getTunnels();
+      console.log('Fetched tunnels from backend:', tunnelsData);
+      tunnels.value = tunnelsData;
     } catch (err) {
       error.value = err as string;
       console.error('Failed to fetch tunnels:', err);
@@ -108,7 +110,7 @@ export const useConnectionsStore = defineStore('connections', () => {
 
       // 先从本地状态中移除，立即更新UI
       connections.value = connections.value.filter(conn => conn.id !== id);
-      tunnels.value = tunnels.value.filter(tunnel => tunnel.connectionId !== id);
+      tunnels.value = tunnels.value.filter(tunnel => tunnel.connection_id !== id);
 
       // 然后调用后端删除
       await sshApi.deleteConnection(id);
@@ -132,7 +134,7 @@ export const useConnectionsStore = defineStore('connections', () => {
       if (errorMessage.includes('Connection not found')) {
         // 从本地状态中移除连接，即使后端删除失败
         connections.value = connections.value.filter(conn => conn.id !== id);
-        tunnels.value = tunnels.value.filter(tunnel => tunnel.connectionId !== id);
+        tunnels.value = tunnels.value.filter(tunnel => tunnel.connection_id !== id);
 
         // 短暂延迟后重新获取数据
         setTimeout(async () => {
@@ -228,14 +230,17 @@ export const useConnectionsStore = defineStore('connections', () => {
   const addTunnel = async (tunnel: Omit<SSHTunnel, 'id' | 'status'>) => {
     try {
       error.value = null;
+      console.log('addTunnel - tunnel object:', tunnel);
+      console.log('addTunnel - tunnel.connection_id:', tunnel.connection_id);
+
       const id = await sshApi.createTunnel({
         name: tunnel.name,
-        connection_id: tunnel.connectionId,
-        tunnel_type: tunnel.type,
-        local_port: tunnel.localPort,
-        remote_host: tunnel.remoteHost,
-        remote_port: tunnel.remotePort,
-        auto_reconnect: tunnel.autoReconnect
+        connection_id: tunnel.connection_id,
+        tunnel_type: tunnel.tunnel_type,
+        local_port: tunnel.local_port,
+        remote_host: tunnel.remote_host,
+        remote_port: tunnel.remote_port,
+        auto_reconnect: tunnel.auto_reconnect
       });
 
       await fetchTunnels(); // Refresh the list
@@ -243,6 +248,38 @@ export const useConnectionsStore = defineStore('connections', () => {
     } catch (err) {
       error.value = err as string;
       console.error('Failed to create tunnel:', err);
+      throw err;
+    }
+  };
+
+  const updateTunnel = async (id: string, updates: Partial<SSHTunnel>) => {
+    try {
+      error.value = null;
+
+      const currentTunnel = tunnels.value.find(t => t.id === id);
+      if (!currentTunnel) {
+        throw new Error('Tunnel not found');
+      }
+
+      await sshApi.updateTunnel({
+        id,
+        name: updates.name || currentTunnel.name,
+        connection_id: updates.connection_id || currentTunnel.connection_id,
+        tunnel_type: updates.tunnel_type || currentTunnel.tunnel_type,
+        local_port: updates.local_port || currentTunnel.local_port,
+        remote_host: updates.remote_host || currentTunnel.remote_host,
+        remote_port: updates.remote_port || currentTunnel.remote_port,
+        auto_reconnect: updates.auto_reconnect !== undefined ? updates.auto_reconnect : currentTunnel.auto_reconnect
+      });
+
+      // Update local state
+      const tunnelIndex = tunnels.value.findIndex(t => t.id === id);
+      if (tunnelIndex !== -1) {
+        Object.assign(tunnels.value[tunnelIndex], updates);
+      }
+    } catch (err) {
+      error.value = err as string;
+      console.error('Failed to update tunnel:', err);
       throw err;
     }
   };
@@ -267,7 +304,7 @@ export const useConnectionsStore = defineStore('connections', () => {
       const connectionTunnels = await sshApi.getTunnelsByConnection(connectionId);
 
       // Update local state for this connection's tunnels
-      tunnels.value = tunnels.value.filter(tunnel => tunnel.connectionId !== connectionId);
+      tunnels.value = tunnels.value.filter(tunnel => tunnel.connection_id !== connectionId);
       tunnels.value.push(...connectionTunnels);
 
       return connectionTunnels;
@@ -374,6 +411,7 @@ export const useConnectionsStore = defineStore('connections', () => {
     connectSSH,
     disconnectSSH,
     addTunnel,
+    updateTunnel,
     removeTunnel,
     loadTunnelsByConnection,
     startTunnel,

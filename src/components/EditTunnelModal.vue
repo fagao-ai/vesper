@@ -1,11 +1,11 @@
 <template>
   <el-dialog
     v-model="dialogVisible"
-    title="添加隧道"
+    title="编辑隧道"
     width="500px"
     :before-close="handleClose"
   >
-    <div class="p-4">
+    <div class="p-4" v-if="tunnel">
       <!-- Basic Form Structure -->
       <div class="space-y-4">
         <!-- Name Field -->
@@ -117,27 +117,27 @@
     <template #footer>
       <div class="dialog-footer">
         <el-button @click="handleClose">取消</el-button>
-        <el-button type="primary" @click="handleSubmit">创建隧道</el-button>
+        <el-button type="primary" @click="handleSubmit">保存修改</el-button>
       </div>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive } from 'vue';
+import { ref, computed, reactive, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import type { SSHTunnel } from '../types';
 
 interface Props {
   visible: boolean;
-  connectionId: string;  // 使用 camelCase
+  tunnel?: SSHTunnel | null;
 }
 
 const props = defineProps<Props>();
 
 const emit = defineEmits<{
   'update:visible': [value: boolean];
-  submit: [data: Omit<SSHTunnel, 'id' | 'status'>];
+  submit: [data: SSHTunnel];
 }>();
 
 const dialogVisible = computed({
@@ -145,8 +145,9 @@ const dialogVisible = computed({
   set: (value) => emit('update:visible', value),
 });
 
-// 使用简单的响应式对象，避免复杂的watch
+// 使用简单的响应式对象
 const formState = reactive({
+  id: '',
   name: '',
   type: 'local' as 'local' | 'remote' | 'dynamic',
   localPort: 8080,
@@ -154,6 +155,19 @@ const formState = reactive({
   remotePort: 80,
   autoReconnect: false,
 });
+
+// 监听隧道数据变化，填充表单
+watch(() => props.tunnel, (newTunnel) => {
+  if (newTunnel) {
+    formState.id = newTunnel.id;
+    formState.name = newTunnel.name;
+    formState.type = newTunnel.tunnel_type;
+    formState.localPort = newTunnel.local_port;
+    formState.remoteHost = newTunnel.remote_host;
+    formState.remotePort = newTunnel.remote_port;
+    formState.autoReconnect = newTunnel.auto_reconnect;
+  }
+}, { immediate: true });
 
 const handleTypeChange = () => {
   // 当切换到动态转发时，重置远程配置
@@ -193,35 +207,28 @@ const handleSubmit = () => {
     return;
   }
 
-  const submitData: Omit<SSHTunnel, 'id' | 'status'> = {
+  if (!props.tunnel) {
+    ElMessage.error('未选择要编辑的隧道');
+    return;
+  }
+
+  const submitData: SSHTunnel = {
+    id: formState.id,
     name: formState.name,
-    connection_id: props.connectionId,  // 使用正确的 prop 名称
+    connection_id: props.tunnel.connection_id,
     tunnel_type: formState.type,
     local_port: formState.localPort,
     remote_host: formState.remoteHost,
     remote_port: formState.remotePort,
+    status: props.tunnel.status, // 保持原有状态
     auto_reconnect: formState.autoReconnect,
   };
 
-  console.log('TunnelModal submitData:', submitData);
-  console.log('props.connectionId:', props.connectionId);
   emit('submit', submitData);
-
-  // 重置表单
-  resetForm();
-};
-
-const resetForm = () => {
-  formState.name = '';
-  formState.type = 'local';
-  formState.localPort = 8080;
-  formState.remoteHost = 'localhost';
-  formState.remotePort = 80;
-  formState.autoReconnect = false;
+  handleClose();
 };
 
 const handleClose = () => {
-  resetForm();
   emit('update:visible', false);
 };
 </script>
