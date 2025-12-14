@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
@@ -18,16 +17,15 @@ pub struct SSHConnection {
     pub host: String,
     pub port: u16,
     pub username: String,
-    #[serde(rename = "auth_method")]
     pub auth_method: AuthMethod,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub password: Option<String>,
-    #[serde(rename = "key_path", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub key_path: Option<String>,
     pub status: ConnectionStatus,
-    #[serde(rename = "last_connected", skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_connected: Option<SystemTime>,
-    #[serde(rename = "created_at", default = "default_created_at")]
+    #[serde(default = "default_created_at")]
     pub created_at: SystemTime,
 }
 
@@ -54,19 +52,13 @@ pub enum ConnectionStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SSHTunnel {
     pub id: String,
-    #[serde(rename = "connection_id")]
     pub connection_id: String,
     pub name: String,
-    #[serde(rename = "tunnel_type")]
     pub tunnel_type: TunnelType,
-    #[serde(rename = "local_port")]
     pub local_port: u16,
-    #[serde(rename = "remote_host")]
     pub remote_host: String,
-    #[serde(rename = "remote_port")]
     pub remote_port: u16,
     pub status: TunnelStatus,
-    #[serde(rename = "auto_reconnect")]
     pub auto_reconnect: bool,
 }
 
@@ -625,19 +617,14 @@ async fn establish_ssh_session(
         }
         AuthMethod::Key => {
             if let Some(key_path) = &connection.key_path {
-                // Read private key file
-                let private_key = match std::fs::read_to_string(key_path) {
-                    Ok(key) => key,
-                    Err(e) => {
-                        return Err(format!(
-                            "Failed to read private key file {}: {}",
-                            key_path, e
-                        ));
-                    }
-                };
+                // Check if the key file exists
+                if !Path::new(key_path).exists() {
+                    return Err(format!("Private key file not found: {}", key_path));
+                }
 
+                // Try to authenticate using private key file
                 session
-                    .userauth_pubkey_memory(&connection.username, None, &private_key, None)
+                    .userauth_pubkey_file(&connection.username, None, Path::new(key_path), None)
                     .await
             } else {
                 return Err("Key authentication requires a key file path".to_string());
@@ -950,21 +937,18 @@ async fn test_ssh_connection_async(connection: &SSHConnection) -> ConnectionResu
         }
         AuthMethod::Key => {
             if let Some(key_path) = &connection.key_path {
-                // Try to read private key file
-                let private_key = match fs::read_to_string(key_path) {
-                    Ok(key) => key,
-                    Err(e) => {
-                        return ConnectionResult {
-                            success: false,
-                            message: format!("Failed to read private key file {}: {}", key_path, e),
-                            error_code: Some("KEY_FILE_READ_ERROR".to_string()),
-                        };
-                    }
-                };
+                // Check if the key file exists
+                if !Path::new(key_path).exists() {
+                    return ConnectionResult {
+                        success: false,
+                        message: format!("Private key file not found: {}", key_path),
+                        error_code: Some("KEY_FILE_NOT_FOUND".to_string()),
+                    };
+                }
 
-                // Try to authenticate using private key
+                // Try to authenticate using private key file
                 session
-                    .userauth_pubkey_memory(&connection.username, None, &private_key, None)
+                    .userauth_pubkey_file(&connection.username, None, Path::new(key_path), None)
                     .await
             } else {
                 return ConnectionResult {

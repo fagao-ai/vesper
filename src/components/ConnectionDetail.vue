@@ -98,7 +98,7 @@
                     <el-icon class="mr-2"><Clock /></el-icon>
                     {{ translate('last_connected') }}
                   </span>
-                  <span class="text-sm font-medium">{{ formatDate(connection.last_connected?.toISOString()) }}</span>
+                  <span class="text-sm font-medium">{{ formatDate(connection.last_connected) }}</span>
                 </div>
               </div>
             </div>
@@ -273,10 +273,11 @@ const formatTunnelConfig = (tunnel: SSHTunnel) => {
   }
 };
 
-const formatDate = (dateString?: string) => {
-  if (!dateString) return '从未';
+const formatDate = (date?: string | Date) => {
+  if (!date) return '从未';
   try {
-    return new Date(dateString).toLocaleString('zh-CN');
+    const dateObj = date instanceof Date ? date : new Date(date);
+    return dateObj.toLocaleString('zh-CN');
   } catch {
     return '无效日期';
   }

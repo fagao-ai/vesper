@@ -8,7 +8,7 @@ export interface SSHConnection {
   password?: string;
   key_path?: string;
   status: 'disconnected' | 'connecting' | 'connected' | 'error';
-  last_connected?: Date;
+  last_connected?: string | Date;
 }
 
 export interface SSHTunnel {
