@@ -329,6 +329,7 @@ const handleRemoveTunnel = async (id: string) => {
     }
   }
 };
+
 </script>
 
 <style scoped>

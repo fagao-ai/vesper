@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { appWindow } from '@tauri-apps/api/window';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 // 窗口控制函数
+const appWindow = getCurrentWindow();
 const minimizeWindow = async () => {
   await appWindow.minimize();
 };

@@ -323,7 +323,8 @@ const selectKeyFile = async () => {
     // 文件选择对话框，不使用过滤器，允许选择所有文件
     const selected = await open({
       title: '选择SSH私钥文件',
-      multiple: false
+      multiple: false,
+      defaultPath: defaultPath
     });
 
     if (selected && typeof selected === 'string') {

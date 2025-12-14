@@ -16,7 +16,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue';
+import { computed } from 'vue';
 import ConnectionForm from './ConnectionForm.vue';
 import type { SSHConnection } from '../types';
 

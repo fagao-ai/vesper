@@ -25,7 +25,6 @@
             v-model="formState.type"
             placeholder="选择隧道类型"
             style="width: 100%"
-            @change="handleTypeChange"
           >
             <el-option
               label="本地转发 (Local)"
