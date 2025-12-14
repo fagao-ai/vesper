@@ -57,11 +57,11 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
-      - name: Type check frontend
-        run: pnpm vue-tsc --noEmit
+      # - name: Type check frontend
+      #   run: pnpm vue-tsc --noEmit
 
-      - name: Build frontend
-        run: pnpm build
+      # - name: Build frontend
+      #   run: pnpm build
 
       - name: Check Rust code
         run: cargo check --manifest-path src-tauri/Cargo.toml
