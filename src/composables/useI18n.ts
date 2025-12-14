@@ -192,7 +192,14 @@ const translations: Translations = {
 
 export function useI18n() {
   const settingsStore = useSettingsStore();
-  const language = ref<Language>('zh');
+  // Initialize from localStorage immediately to avoid race condition
+  const savedLang = (typeof window !== 'undefined' ? localStorage.getItem('language') : null) as Language;
+  const language = ref<Language>(savedLang && ['zh', 'en'].includes(savedLang) ? savedLang : 'zh');
+
+  // Set HTML lang attribute immediately
+  if (typeof window !== 'undefined') {
+    document.documentElement.lang = language.value;
+  }
 
   // 获取翻译文本
   const t = computed(() => {
@@ -215,35 +222,35 @@ export function useI18n() {
 
   // 设置语言
   const setLanguage = (lang: Language) => {
+    console.log('setLanguage called:', lang, 'Previous:', language.value);
     language.value = lang;
-    // 设置 HTML lang 属性
-    document.documentElement.lang = lang;
+    // 更新 localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('language', lang);
+      // 设置 HTML lang 属性
+      document.documentElement.lang = lang;
+    }
   };
 
-  // 初始化语言 - 从 backend 设置读取
-  const initLanguage = async () => {
-    // 首先尝试从 localStorage 读取（作为后备）
-    const savedLang = localStorage.getItem('language') as Language;
-    if (savedLang && ['zh', 'en'].includes(savedLang)) {
-      language.value = savedLang;
+  // 初始化语言 - 确保使用后端设置（如果不同于当前）
+  const initLanguage = async (backendLang?: Language) => {
+    console.log('initLanguage called with:', backendLang, 'Current language:', language.value);
+
+    // 如果后端语言与当前语言不同，更新为后端语言
+    if (backendLang && ['zh', 'en'].includes(backendLang) && backendLang !== language.value) {
+      language.value = backendLang;
+      localStorage.setItem('language', backendLang);
+      console.log('Updated language from backend:', backendLang);
     }
 
-    // 然后从 backend 设置读取并覆盖
-    try {
-      await settingsStore.fetchSettings();
-      const backendLang = settingsStore.settings.language as Language;
-      if (backendLang && ['zh', 'en'].includes(backendLang)) {
-        language.value = backendLang;
-      }
-    } catch (error) {
-      console.warn('Failed to load language from backend settings:', error);
-    }
-
+    // 确保文档语言属性正确设置
     document.documentElement.lang = language.value;
+    console.log('Final language value:', language.value);
   };
 
   // 监听 backend 设置的变化并同步语言
   watch(() => settingsStore.settings.language, (newLanguage) => {
+    console.log('Language watcher triggered:', newLanguage, 'Current:', language.value);
     if (newLanguage && ['zh', 'en'].includes(newLanguage)) {
       setLanguage(newLanguage as Language);
       // 同步更新 localStorage 作为后备
