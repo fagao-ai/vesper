@@ -81,6 +81,7 @@ pub async fn create_connection(
         key_path: request.key_path,
         status: crate::ssh::ConnectionStatus::Disconnected,
         last_connected: None,
+        created_at: std::time::SystemTime::now(),
     };
 
     manager.add_connection(connection).await
@@ -126,9 +127,10 @@ pub async fn update_connection(
         key_path: request.key_path,
         status: existing_connection.status,
         last_connected: existing_connection.last_connected,
+        created_at: existing_connection.created_at,
     };
 
-    manager.update_connection(&updated_connection.id.clone(), updated_connection).await
+    manager.update_connection(updated_connection.id.clone(), updated_connection).await
 }
 
 #[tauri::command]
@@ -136,7 +138,7 @@ pub async fn delete_connection(
     id: String,
     manager: State<'_, ConnectionManager>,
 ) -> Result<(), String> {
-    manager.remove_connection(&id).await
+    manager.delete_connection(id).await
 }
 
 #[tauri::command]
@@ -172,6 +174,7 @@ pub async fn test_connection_data(
         key_path: request.key_path,
         status: crate::ssh::ConnectionStatus::Disconnected,
         last_connected: None,
+        created_at: std::time::SystemTime::now(),
     };
 
     // 执行连接测试
@@ -203,7 +206,6 @@ pub async fn create_tunnel(
     let tunnel_type = match request.tunnel_type.as_str() {
         "local" => TunnelType::Local,
         "remote" => TunnelType::Remote,
-        "dynamic" => TunnelType::Dynamic,
         _ => return Err("Invalid tunnel type".to_string()),
     };
 
@@ -236,7 +238,6 @@ pub async fn update_tunnel(
     let tunnel_type = match request.tunnel_type.as_str() {
         "local" => TunnelType::Local,
         "remote" => TunnelType::Remote,
-        "dynamic" => TunnelType::Dynamic,
         _ => return Err("Invalid tunnel type".to_string()),
     };
 
@@ -252,7 +253,7 @@ pub async fn update_tunnel(
         auto_reconnect: request.auto_reconnect,
     };
 
-    manager.update_tunnel(&updated_tunnel.id.clone(), updated_tunnel).await
+    manager.update_tunnel(updated_tunnel.id.clone(), updated_tunnel).await
 }
 
 #[tauri::command]
@@ -276,24 +277,17 @@ pub async fn delete_tunnel(
     manager: State<'_, ConnectionManager>,
 ) -> Result<(), String> {
     eprintln!("delete_tunnel command received ID: {} (length: {})", id, id.len());
-    manager.remove_tunnel(&id).await
-}
-
-#[tauri::command]
-pub async fn start_tunnel(
-    id: String,
-    manager: State<'_, ConnectionManager>,
-) -> Result<crate::ssh::ConnectionResult, String> {
-    Ok(manager.start_tunnel(&id).await)
+    manager.delete_tunnel(id).await
 }
 
 #[tauri::command]
 pub async fn stop_tunnel(
     id: String,
     manager: State<'_, ConnectionManager>,
-) -> Result<crate::ssh::ConnectionResult, String> {
-    Ok(manager.stop_tunnel(&id).await)
+) -> Result<(), String> {
+    manager.stop_tunnel(id).await
 }
+
 
 // Settings Commands
 #[tauri::command]

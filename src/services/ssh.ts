@@ -118,15 +118,11 @@ export const sshApi = {
     return await invoke('delete_tunnel', { id: String(id) });
   },
 
-  // Tunnel control operations
-  async startTunnel(id: string): Promise<ConnectionResult> {
-    return await invoke('start_tunnel', { id: String(id) });
-  },
-
-  async stopTunnel(id: string): Promise<ConnectionResult> {
+  async stopTunnel(id: string): Promise<void> {
     return await invoke('stop_tunnel', { id: String(id) });
   },
 
+  
   // Settings operations
   async getSettings(): Promise<any> {
     return await invoke('get_settings');

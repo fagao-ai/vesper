@@ -45,16 +45,7 @@
                 <span>远程转发 - 将本地服务端口映射到远程</span>
               </div>
             </el-option>
-            <el-option
-              label="动态转发 (Dynamic)"
-              value="dynamic"
-            >
-              <div class="flex items-center">
-                <el-icon class="mr-2"><Switch /></el-icon>
-                <span>动态转发 - 创建 SOCKS 代理</span>
-              </div>
-            </el-option>
-          </el-select>
+            </el-select>
         </div>
 
         <!-- Port Configuration -->
@@ -69,8 +60,7 @@
           />
         </div>
 
-        <!-- Remote Configuration (conditional) -->
-        <div v-if="formState.type !== 'dynamic'">
+        <!-- Remote Configuration -->
           <div class="grid grid-cols-2 gap-4">
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">远程主机</label>
@@ -91,7 +81,6 @@
               />
             </div>
           </div>
-        </div>
 
         <!-- Auto Reconnect -->
         <div>
@@ -149,7 +138,7 @@ const dialogVisible = computed({
 const formState = reactive({
   id: '',
   name: '',
-  type: 'local' as 'local' | 'remote' | 'dynamic',
+  type: 'local' as 'local' | 'remote',
   localPort: 8080,
   remoteHost: 'localhost',
   remotePort: 80,
@@ -169,13 +158,6 @@ watch(() => props.tunnel, (newTunnel) => {
   }
 }, { immediate: true });
 
-const handleTypeChange = () => {
-  // 当切换到动态转发时，重置远程配置
-  if (formState.type === 'dynamic') {
-    formState.remoteHost = 'localhost';
-    formState.remotePort = 80;
-  }
-};
 
 const getConfigPreview = () => {
   switch (formState.type) {
@@ -183,8 +165,6 @@ const getConfigPreview = () => {
       return `ssh -L ${formState.localPort}:${formState.remoteHost}:${formState.remotePort} user@host`;
     case 'remote':
       return `ssh -R ${formState.localPort}:${formState.remoteHost}:${formState.remotePort} user@host`;
-    case 'dynamic':
-      return `ssh -D ${formState.localPort} user@host (SOCKS 代理)`;
     default:
       return '';
   }
@@ -202,7 +182,7 @@ const handleSubmit = () => {
     return;
   }
 
-  if (formState.type !== 'dynamic' && !formState.remoteHost.trim()) {
+  if (!formState.remoteHost.trim()) {
     ElMessage.error('请输入远程主机地址');
     return;
   }

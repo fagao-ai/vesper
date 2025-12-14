@@ -179,7 +179,6 @@ const handleModalCancel = () => {
 
 const handleConnect = async (id: string) => {
   try {
-    connectionsStore.updateConnection(id, { status: 'connecting' });
     const result = await connectionsStore.connectSSH(id);
     if (!result.success) {
       alert(`连接失败: ${result.message}`);
@@ -219,29 +218,6 @@ const handleTunnelSubmit = async (tunnelData: Omit<SSHTunnel, 'id' | 'status'>) 
   }
 };
 
-const handleStartTunnel = async (id: string) => {
-  try {
-    const result = await connectionsStore.startTunnel(id);
-    if (!result.success) {
-      alert(`启动隧道失败: ${result.message}`);
-    }
-  } catch (error) {
-    console.error('Failed to start tunnel:', error);
-    alert(`启动隧道失败: ${error}`);
-  }
-};
-
-const handleStopTunnel = async (id: string) => {
-  try {
-    const result = await connectionsStore.stopTunnel(id);
-    if (!result.success) {
-      alert(`停止隧道失败: ${result.message}`);
-    }
-  } catch (error) {
-    console.error('Failed to stop tunnel:', error);
-    alert(`停止隧道失败: ${error}`);
-  }
-};
 
 const handleEditTunnel = (tunnel: SSHTunnel) => {
   editingTunnel.value = tunnel;
@@ -391,8 +367,6 @@ const openGitHub = async () => {
               :tunnels="selectedConnection ? connectionsStore.tunnels.filter(t => t.connection_id === selectedConnection.id) : []"
               @add-tunnel="handleAddTunnel"
               @edit-tunnel="handleEditTunnel"
-              @start-tunnel="handleStartTunnel"
-              @stop-tunnel="handleStopTunnel"
               @remove-tunnel="handleRemoveTunnel"
             />
           </div>

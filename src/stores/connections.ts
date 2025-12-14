@@ -298,6 +298,23 @@ export const useConnectionsStore = defineStore('connections', () => {
     }
   };
 
+  const stopTunnel = async (id: string) => {
+    try {
+      error.value = null;
+      await sshApi.stopTunnel(id);
+
+      // Update local state
+      const tunnelIndex = tunnels.value.findIndex(t => t.id === id);
+      if (tunnelIndex !== -1) {
+        tunnels.value[tunnelIndex].status = 'inactive';
+      }
+    } catch (err) {
+      error.value = err as string;
+      console.error('Failed to stop tunnel:', err);
+      throw err;
+    }
+  };
+
   const loadTunnelsByConnection = async (connectionId: string) => {
     try {
       error.value = null;
@@ -315,51 +332,7 @@ export const useConnectionsStore = defineStore('connections', () => {
     }
   };
 
-  const startTunnel = async (id: string) => {
-    try {
-      error.value = null;
-      const result = await sshApi.startTunnel(id);
-
-      // Update tunnel status locally
-      const tunnel = tunnels.value.find(t => t.id === id);
-      if (tunnel && result.success) {
-        tunnel.status = 'active';
-      }
-
-      return result;
-    } catch (err) {
-      error.value = err as string;
-      console.error('Failed to start tunnel:', err);
-
-      // Update tunnel status to error
-      const tunnel = tunnels.value.find(t => t.id === id);
-      if (tunnel) {
-        tunnel.status = 'error';
-      }
-
-      throw err;
-    }
-  };
-
-  const stopTunnel = async (id: string) => {
-    try {
-      error.value = null;
-      const result = await sshApi.stopTunnel(id);
-
-      // Update tunnel status locally
-      const tunnel = tunnels.value.find(t => t.id === id);
-      if (tunnel && result.success) {
-        tunnel.status = 'inactive';
-      }
-
-      return result;
-    } catch (err) {
-      error.value = err as string;
-      console.error('Failed to stop tunnel:', err);
-      throw err;
-    }
-  };
-
+  
   // Initialize data on store creation
   const initialize = async () => {
     try {
@@ -413,8 +386,7 @@ export const useConnectionsStore = defineStore('connections', () => {
     addTunnel,
     updateTunnel,
     removeTunnel,
-    loadTunnelsByConnection,
-    startTunnel,
-    stopTunnel
+    stopTunnel,
+    loadTunnelsByConnection
   };
 });

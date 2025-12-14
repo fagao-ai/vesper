@@ -29,9 +29,8 @@ pub fn run() {
             commands::update_tunnel,
             commands::get_tunnels,
             commands::get_tunnels_by_connection,
-            commands::delete_tunnel,
-            commands::start_tunnel,
             commands::stop_tunnel,
+            commands::delete_tunnel,
             // Settings Commands
             commands::get_settings,
             commands::update_settings,

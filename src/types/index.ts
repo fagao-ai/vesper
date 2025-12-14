@@ -15,7 +15,7 @@ export interface SSHTunnel {
   id: string;
   name: string;
   connection_id: string;
-  tunnel_type: 'local' | 'remote' | 'dynamic';
+  tunnel_type: 'local' | 'remote';
   local_port: number;
   remote_host: string;
   remote_port: number;

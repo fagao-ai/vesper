@@ -183,6 +183,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-ssh2-lite"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e00ee230bcd18bf15547e674950ace76b13fcda3ea1a33acca27e2eab245b58a"
+dependencies = [
+ "async-trait",
+ "futures-util",
+ "libssh2-sys",
+ "ssh2",
+ "tokio",
+]
+
+[[package]]
 name = "async-task"
 version = "4.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4515,10 +4528,10 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 name = "vesper"
 version = "0.1.0"
 dependencies = [
+ "async-ssh2-lite",
  "dirs 5.0.1",
  "serde",
  "serde_json",
- "ssh2",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",

@@ -182,22 +182,6 @@
                   </div>
 
                   <div class="flex items-center space-x-2">
-                    <el-button
-                      v-if="tunnel.status === 'inactive'"
-                      type="success"
-                      size="small"
-                      @click="$emit('start-tunnel', tunnel.id)"
-                    >
-                      <el-icon><VideoPlay /></el-icon>
-                    </el-button>
-                    <el-button
-                      v-else-if="tunnel.status === 'active'"
-                      type="warning"
-                      size="small"
-                      @click="$emit('stop-tunnel', tunnel.id)"
-                    >
-                      <el-icon><VideoPause /></el-icon>
-                    </el-button>
                     <el-dropdown trigger="click" @command="handleTunnelAction">
                       <el-button type="text" size="small">
                         <el-icon><MoreFilled /></el-icon>
@@ -244,8 +228,6 @@ const emit = defineEmits<{
   disconnect: [id: string];
   'add-tunnel': [connectionId: string];
   'edit-tunnel': [tunnel: SSHTunnel];
-  'start-tunnel': [id: string];
-  'stop-tunnel': [id: string];
   'remove-tunnel': [id: string];
 }>();
 
@@ -275,8 +257,7 @@ const getStatusType = (status: string) => {
 const getTunnelTypeText = (type: string) => {
   const typeMap = {
     'local': '本地转发',
-    'remote': '远程转发',
-    'dynamic': '动态转发'
+    'remote': '远程转发'
   };
   return typeMap[type as keyof typeof typeMap] || type;
 };
@@ -287,8 +268,6 @@ const formatTunnelConfig = (tunnel: SSHTunnel) => {
       return `本地 ${tunnel.local_port} → ${tunnel.remote_host}:${tunnel.remote_port}`;
     case 'remote':
       return `远程 ${tunnel.local_port} → ${tunnel.remote_host}:${tunnel.remote_port}`;
-    case 'dynamic':
-      return `SOCKS 代理 localhost:${tunnel.local_port}`;
     default:
       return '';
   }
