@@ -1,4 +1,4 @@
-import { ref, computed, watch } from 'vue';
+import { ref, computed } from 'vue';
 
 export type Theme = 'light' | 'dark' | 'auto';
 

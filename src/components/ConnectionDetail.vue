@@ -20,7 +20,7 @@
                 <el-icon class="mr-1" v-else-if="connection.status === 'error'"><Close /></el-icon>
                 {{ getStatusText(connection.status) }}
               </el-tag>
-              <span class="text-sm text-gray-500">{{ connection.authMethod === 'password' ? translate('auth_method_password') : translate('auth_method_key') }}</span>
+              <span class="text-sm text-gray-500">{{ connection.auth_method === 'password' ? translate('auth_method_password') : translate('auth_method_key') }}</span>
             </div>
           </div>
         </div>
@@ -91,14 +91,14 @@
                     <el-icon class="mr-2"><Key /></el-icon>
                     {{ translate('auth_method') }}
                   </span>
-                  <span class="text-sm font-medium">{{ connection.authMethod === 'password' ? translate('auth_method_password') : translate('auth_method_key') }}</span>
+                  <span class="text-sm font-medium">{{ connection.auth_method === 'password' ? translate('auth_method_password') : translate('auth_method_key') }}</span>
                 </div>
-                <div v-if="connection.lastConnected" class="flex items-center justify-between">
+                <div v-if="connection.last_connected" class="flex items-center justify-between">
                   <span class="text-gray-600 flex items-center">
                     <el-icon class="mr-2"><Clock /></el-icon>
                     {{ translate('last_connected') }}
                   </span>
-                  <span class="text-sm font-medium">{{ formatDate(connection.lastConnected) }}</span>
+                  <span class="text-sm font-medium">{{ formatDate(connection.last_connected?.toISOString()) }}</span>
                 </div>
               </div>
             </div>
@@ -117,7 +117,7 @@
                   </div>
                   <div>
                     <span class="text-gray-600">{{ translate('created_time') }}:</span>
-                    <span class="ml-2 font-medium">{{ formatDate(connection.createdAt) }}</span>
+                    <span class="ml-2 font-medium">{{ formatDate(new Date().toISOString()) }}</span>
                   </div>
                 </div>
               </div>

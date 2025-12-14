@@ -62,9 +62,9 @@ export const useConnectionsStore = defineStore('connections', () => {
         host: connection.host,
         port: connection.port,
         username: connection.username,
-        auth_method: connection.authMethod,
+        auth_method: connection.auth_method,
         password: connection.password,
-        key_path: connection.keyPath
+        key_path: connection.key_path
       });
 
       await fetchConnections(); // Refresh the list
@@ -91,9 +91,9 @@ export const useConnectionsStore = defineStore('connections', () => {
         host: updates.host || currentConnection.host,
         port: updates.port || currentConnection.port,
         username: updates.username || currentConnection.username,
-        auth_method: updates.authMethod || currentConnection.authMethod,
+        auth_method: updates.auth_method || currentConnection.auth_method,
         password: updates.password || currentConnection.password,
-        key_path: updates.keyPath || currentConnection.keyPath
+        key_path: updates.key_path || currentConnection.key_path
       });
 
       await fetchConnections(); // Refresh the list
@@ -185,7 +185,7 @@ export const useConnectionsStore = defineStore('connections', () => {
       // Update connection status locally
       if (connection && result.success) {
         connection.status = 'connected';
-        connection.lastConnected = new Date();
+        connection.last_connected = new Date();
       }
 
       return result;

@@ -5,19 +5,17 @@ import { useSettingsStore } from './stores/settings';
 import { useTheme } from './composables/useTheme';
 import { useI18n } from './composables/useI18n';
 import ConnectionList from './components/ConnectionList.vue';
-import ConnectionForm from './components/ConnectionForm.vue';
 import ConnectionDetail from './components/ConnectionDetail.vue';
 import AddConnectionModal from './components/AddConnectionModal.vue';
 import TunnelModal from './components/TunnelModal.vue';
 import EditTunnelModal from './components/EditTunnelModal.vue';
 import SettingsModal from './components/SettingsModal.vue';
-import TitleBar from './components/TitleBar.vue';
 import type { SSHConnection, SSHTunnel } from './types';
 
 const connectionsStore = useConnectionsStore();
 const settingsStore = useSettingsStore();
-const { theme, resolvedTheme, setTheme, initTheme } = useTheme();
-const { language, translate, setLanguage, initLanguage } = useI18n();
+const { setTheme, initTheme } = useTheme();
+const { translate, setLanguage, initLanguage } = useI18n();
 
 // Initialize the stores with data from the backend
 onMounted(async () => {
@@ -366,7 +364,7 @@ const openGitHub = async () => {
           <div class="flex-1 overflow-hidden">
             <ConnectionDetail
               :connection="selectedConnection"
-              :tunnels="selectedConnection ? connectionsStore.tunnels.filter(t => t.connection_id === selectedConnection.id) : []"
+              :tunnels="selectedConnection ? connectionsStore.tunnels.filter(t => t.connection_id === selectedConnection!.id) : []"
               @connect="handleConnect"
               @disconnect="handleDisconnect"
               @add-tunnel="handleAddTunnel"

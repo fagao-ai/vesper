@@ -3,7 +3,7 @@
     <!-- Empty State -->
     <div v-if="connections.length === 0" class="flex-1 flex items-center justify-center">
       <el-empty :description="translate('no_connections')" class="text-center">
-        <el-button type="primary" @click="debugEmit('add-connection')">
+        <el-button type="primary" @click="$emit('add-connection')">
           <el-icon class="mr-2"><Plus /></el-icon>
           {{ translate('add_first_connection') }}
         </el-button>
@@ -17,7 +17,7 @@
         <el-button
           type="primary"
           class="w-full"
-          @click="debugEmit('add-connection')"
+          @click="$emit('add-connection')"
           size="default"
         >
           <el-icon class="mr-2"><Plus /></el-icon>
@@ -151,7 +151,6 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
 import { ElMessageBox, ElMessage } from 'element-plus';
 import { useConnectionsStore } from '../stores/connections';
 import { useI18n } from '../composables/useI18n';
@@ -181,7 +180,7 @@ const { translate } = useI18n();
 const connectionsStore = useConnectionsStore();
 
 const getTunnels = (connectionId: string) => {
-  return props.tunnels.filter(tunnel => tunnel.connectionId === connectionId);
+  return props.tunnels.filter(tunnel => tunnel.connection_id === connectionId);
 };
 
 const getStatusText = (status: string) => {
@@ -204,27 +203,6 @@ const getStatusType = (status: string) => {
   return typeMap[status as keyof typeof typeMap] || 'info';
 };
 
-const getTunnelTypeText = (type: string) => {
-  const typeMap = {
-    'local': '本地转发',
-    'remote': '远程转发',
-    'dynamic': '动态转发'
-  };
-  return typeMap[type as keyof typeof typeMap] || type;
-};
-
-const formatTunnelConfig = (tunnel: SSHTunnel) => {
-  switch (tunnel.type) {
-    case 'local':
-      return `本地 ${tunnel.localPort} → ${tunnel.remoteHost}:${tunnel.remotePort}`;
-    case 'remote':
-      return `远程 ${tunnel.localPort} → ${tunnel.remoteHost}:${tunnel.remotePort}`;
-    case 'dynamic':
-      return `SOCKS 代理 localhost:${tunnel.localPort}`;
-    default:
-      return '';
-  }
-};
 
 const handleAction = async (command: string) => {
   // 修复：正确处理UUID中的连字符，只分割第一个连字符
@@ -250,26 +228,6 @@ const handleAction = async (command: string) => {
   }
 };
 
-// 添加调试函数
-const debugEmit = (event: string, ...args: any[]) => {
-  emit(event as any, ...(args as any));
-};
-
-const handleTunnelAction = async (command: string) => {
-  const [action, id] = command.split('-');
-
-  switch (action) {
-    case 'start':
-      emit('start-tunnel', id);
-      break;
-    case 'stop':
-      emit('stop-tunnel', id);
-      break;
-    case 'remove':
-      await handleRemoveTunnel(id);
-      break;
-  }
-};
 
 const handleDelete = async (id: string) => {
   try {
@@ -308,27 +266,6 @@ const handleTestConnection = async (id: string) => {
   }
 };
 
-const handleRemoveTunnel = async (id: string) => {
-  try {
-    await ElMessageBox.confirm(
-      translate('confirm_delete_tunnel_message'),
-      translate('confirm_delete'),
-      {
-        confirmButtonText: translate('delete_connection'),
-        cancelButtonText: translate('cancel'),
-        type: 'warning',
-      }
-    );
-
-    await connectionsStore.removeTunnel(id);
-    ElMessage.success(translate('tunnel_deleted_successfully'));
-  } catch (error) {
-    if (error !== 'cancel') {
-      console.error('Failed to remove tunnel:', error);
-      ElMessage.error(`删除隧道失败: ${error}`);
-    }
-  }
-};
 
 </script>
 

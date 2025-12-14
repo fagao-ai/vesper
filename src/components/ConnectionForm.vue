@@ -464,10 +464,10 @@ const handleSubmit = async () => {
       host: formData.host.trim(),
       port: formData.port,
       username: formData.username.trim(),
-      authMethod: formData.authMethod,
+      auth_method: formData.authMethod,
       ...(formData.authMethod === 'password'
         ? { password: formData.password }
-        : { keyPath: formData.keyPath.trim() })
+        : { key_path: formData.keyPath.trim() })
     });
   } catch (error) {
     console.error('Form validation failed:', error);
@@ -504,9 +504,9 @@ onMounted(() => {
       host: props.connection.host,
       port: props.connection.port,
       username: props.connection.username,
-      authMethod: props.connection.authMethod,
+      authMethod: props.connection.auth_method,
       password: props.connection.password || '',
-      keyPath: props.connection.keyPath || '',
+      keyPath: props.connection.key_path || '',
       notes: ''
     });
   }

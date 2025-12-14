@@ -62,7 +62,6 @@ const translations: Translations = {
     language: '语言',
     no_connections: '还没有配置任何 SSH 连接',
     add_first_connection: '添加第一个连接',
-    add_connection: '添加连接',
     select_connection: '请选择一个SSH连接查看详情',
     connection_info: '连接信息',
     tunnel_management: '隧道管理',
@@ -76,13 +75,12 @@ const translations: Translations = {
     basic_info: '基本信息',
     advanced_info: '高级信息',
     host_address: '主机地址',
-    auth_method: '认证方式',
     add_new_connection: '添加新连接',
     tunnel_count: '个隧道',
     test_connection: '测试连接',
-    edit_connection: '编辑',
+    edit_connection_short: '编辑',
     add_tunnel: '添加隧道',
-    delete_connection: '删除',
+    delete_connection_short: '删除',
     confirm_delete: '确认删除',
     confirm_delete_message: '确定要删除这个连接吗？相关的隧道也会被删除。',
     confirm_delete_tunnel_message: '确定要删除这个隧道吗？',
@@ -93,11 +91,9 @@ const translations: Translations = {
     status_connecting: '连接中',
     status_connected: '已连接',
     status_error: '连接错误',
-    username: '用户名',
     no_tunnel_config: '暂无隧道配置',
     create_first_tunnel: '创建第一个隧道',
-    edit_tunnel_coming_soon: '编辑隧道功能即将推出',
-    tunnel_deleted_successfully: '隧道删除成功'
+    edit_tunnel_coming_soon: '编辑隧道功能即将推出'
   },
   en: {
     app_title: 'Vesper',
@@ -151,7 +147,6 @@ const translations: Translations = {
     language: 'Language',
     no_connections: 'No SSH connections configured yet',
     add_first_connection: 'Add First Connection',
-    add_connection: 'Add Connection',
     select_connection: 'Please select an SSH connection to view details',
     connection_info: 'Connection Info',
     tunnel_management: 'Tunnel Management',
@@ -165,13 +160,12 @@ const translations: Translations = {
     basic_info: 'Basic Info',
     advanced_info: 'Advanced Info',
     host_address: 'Host Address',
-    auth_method: 'Auth Method',
     add_new_connection: 'Add New Connection',
     tunnel_count: ' tunnels',
     test_connection: 'Test Connection',
-    edit_connection: 'Edit',
+    edit_connection_short: 'Edit',
     add_tunnel: 'Add Tunnel',
-    delete_connection: 'Delete',
+    delete_connection_short: 'Delete',
     confirm_delete: 'Confirm Delete',
     confirm_delete_message: 'Are you sure to delete this connection? Related tunnels will also be deleted.',
     confirm_delete_tunnel_message: 'Are you sure to delete this tunnel?',
@@ -182,11 +176,9 @@ const translations: Translations = {
     status_connecting: 'Connecting',
     status_connected: 'Connected',
     status_error: 'Connection Error',
-    username: 'Username',
     no_tunnel_config: 'No tunnel configuration',
     create_first_tunnel: 'Create First Tunnel',
-    edit_tunnel_coming_soon: 'Edit tunnel feature coming soon',
-    tunnel_deleted_successfully: 'Tunnel deleted successfully'
+    edit_tunnel_coming_soon: 'Edit tunnel feature coming soon'
   }
 };
 

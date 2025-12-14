@@ -112,7 +112,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, watch } from 'vue';
+import { computed, reactive, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import type { SSHTunnel } from '../types';
 

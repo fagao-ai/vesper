@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 use tokio::time::{timeout, Duration};
 use uuid::Uuid;
 
-use async_ssh2_lite::{AsyncListener, AsyncSession, TokioTcpStream};
+use async_ssh2_lite::{AsyncSession, TokioTcpStream};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SSHConnection {
@@ -477,11 +477,7 @@ impl ConnectionManager {
         tunnels.values().cloned().collect()
     }
 
-    pub async fn get_tunnel(&self, id: &str) -> Option<SSHTunnel> {
-        let tunnels = self.tunnels.read().await;
-        tunnels.get(id).cloned()
-    }
-
+  
     pub async fn get_tunnels_by_connection(&self, connection_id: &str) -> Vec<SSHTunnel> {
         let tunnels = self.tunnels.read().await;
         tunnels
