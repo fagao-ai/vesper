@@ -34,6 +34,13 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@1.91.0
 
+      - name: Install macOS system deps
+        if: runner.os == 'macOS'
+        run: |
+          brew install openssl
+          echo "OPENSSL_DIR=$(brew --prefix openssl)" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$(brew --prefix openssl)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+
       - name: Add macOS targets
         if: runner.os == 'macOS'
         run: |
