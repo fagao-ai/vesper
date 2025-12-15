@@ -247,6 +247,10 @@ jobs:
             - macOS:
               - 根据你的 Mac 芯片类型下载对应的版本（Intel 或 Apple Silicon）
               - 打开 .dmg 文件，将应用拖入 Applications 文件夹
+              - ⚠️ **重要提示**: 如果首次打开应用时提示"无法验证开发者"或"已损坏"，请在终端中执行以下命令：
+                ```bash
+                sudo xattr -cr /Applications/Vesper.app
+                ```
             - Windows: 运行 .msi 安装程序
             - Linux:
               - AppImage: 下载后添加执行权限 `chmod +x Vesper-*-Linux.AppImage` 然后运行
