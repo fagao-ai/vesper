@@ -37,7 +37,7 @@ jobs:
       - name: Install macOS system deps
         if: runner.os == 'macOS'
         run: |
-          brew install openssl
+          brew install openssl@3
           echo "OPENSSL_DIR=$(brew --prefix openssl)" >> $GITHUB_ENV
           echo "PKG_CONFIG_PATH=$(brew --prefix openssl)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
 
