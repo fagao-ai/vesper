@@ -21,6 +21,9 @@ jobs:
           - os: windows-2022
           - os: ubuntu-22.04
           - os: macos-14
+            arch: x86_64
+          - os: macos-14
+            arch: arm64
 
     steps:
       - name: Checkout
@@ -37,14 +40,21 @@ jobs:
       - name: Install macOS system deps
         if: runner.os == 'macOS'
         run: |
+          # Install OpenSSL
           brew install openssl@3
-          echo "OPENSSL_DIR=$(brew --prefix openssl)" >> $GITHUB_ENV
-          echo "PKG_CONFIG_PATH=$(brew --prefix openssl)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
 
-      - name: Add macOS targets
+          # Set up environment variables
+          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+
+      - name: Add Rust target
         if: runner.os == 'macOS'
         run: |
-          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            rustup target add x86_64-apple-darwin
+          else
+            rustup target add aarch64-apple-darwin
+          fi
 
       - name: Install Linux system deps
         if: runner.os == 'Linux'
@@ -96,7 +106,18 @@ jobs:
 
       - name: Build Tauri App (macOS)
         if: runner.os == 'macOS'
-        run: pnpm tauri build --target universal-apple-darwin
+        run: |
+          # Build for the specific architecture based on matrix
+          export OPENSSL_DIR=$(brew --prefix openssl@3)
+          export PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig:$PKG_CONFIG_PATH
+
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            echo "Building for x86_64 architecture"
+            pnpm tauri build --target x86_64-apple-darwin
+          else
+            echo "Building for arm64 architecture"
+            pnpm tauri build --target aarch64-apple-darwin
+          fi
 
       - name: Build Tauri App (Windows)
         if: runner.os == 'Windows'
@@ -113,31 +134,31 @@ jobs:
           set -euxo pipefail
           mkdir -p release-assets
           VERSION="${GITHUB_REF_NAME}"  # e.g., v1.0.0
+          ARCH="${{ matrix.arch }}"
+
+          # Determine target path based on architecture
+          if [ "$ARCH" = "x86_64" ]; then
+            TARGET_PATH="src-tauri/target/x86_64-apple-darwin/release/bundle/dmg"
+            ARCH_SUFFIX="x86_64"
+          else
+            TARGET_PATH="src-tauri/target/aarch64-apple-darwin/release/bundle/dmg"
+            ARCH_SUFFIX="arm64"
+          fi
 
           # Find .dmg file
           DMG=""
-          for path in \
-            "src-tauri/target/universal-apple-darwin/release/bundle/dmg" \
-            "src-tauri/target/aarch64-apple-darwin/release/bundle/dmg" \
-            "src-tauri/target/x86_64-apple-darwin/release/bundle/dmg" \
-            "src-tauri/target/release/bundle/dmg"; do
-            if [ -d "$path" ]; then
-              DMG=$(find "$path" -maxdepth 1 -name "*.dmg" -type f | head -1 || true)
-              if [ -n "$DMG" ]; then
-                break
-              fi
-            fi
-          done
-
-          if [ -z "$DMG" ]; then
-            echo "No macOS .dmg found" >&2
-            exit 1
+          if [ -d "$TARGET_PATH" ]; then
+            DMG=$(find "$TARGET_PATH" -maxdepth 1 -name "*.dmg" -type f | head -1 || true)
           fi
 
-          # Copy and rename .dmg
-          NEW_DMG="Vesper-${VERSION}-macOS.dmg"
-          cp "$DMG" "release-assets/$NEW_DMG"
-          echo "macOS DMG copied: $NEW_DMG"
+          if [ -n "$DMG" ]; then
+            NEW_DMG="Vesper-${VERSION}-macOS-${ARCH_SUFFIX}.dmg"
+            cp "$DMG" "release-assets/$NEW_DMG"
+            echo "macOS ${ARCH_SUFFIX} DMG copied: $NEW_DMG"
+          else
+            echo "No macOS ${ARCH_SUFFIX} .dmg found in $TARGET_PATH" >&2
+            exit 1
+          fi
 
       - name: Prepare Windows Assets
         if: runner.os == 'Windows'
@@ -207,13 +228,17 @@ jobs:
 
             ### 下载
 
-            - **macOS**: `Vesper-${{ github.ref_name }}-macOS.dmg`
+            - **macOS**:
+              - Intel 芯片: `Vesper-${{ github.ref_name }}-macOS-x86_64.dmg`
+              - Apple Silicon (M1/M2/M3): `Vesper-${{ github.ref_name }}-macOS-arm64.dmg`
             - **Windows**: `Vesper-${{ github.ref_name }}-Windows.msi`
             - **Linux**: `Vesper-${{ github.ref_name }}-Linux.AppImage` 或 `Vesper-${{ github.ref_name }}-Linux.deb`
 
             ### 安装说明
 
-            - macOS: 打开 .dmg 文件，将应用拖入 Applications 文件夹
+            - macOS:
+              - 根据你的 Mac 芯片类型下载对应的版本（Intel 或 Apple Silicon）
+              - 打开 .dmg 文件，将应用拖入 Applications 文件夹
             - Windows: 运行 .msi 安装程序
             - Linux:
               - AppImage: 下载后添加执行权限 `chmod +x Vesper-*-Linux.AppImage` 然后运行
