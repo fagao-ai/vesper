@@ -50,7 +50,7 @@ Vesper 是一个现代化的 SSH 隧道管理器，提供直观的界面来管�
 ## 📦 安装
 
 ### 下载预构建版本
-从 [Releases 页面](https://github.com/yourusername/vesper/releases) 下载对应平台的安装包：
+从 [Releases 页面](https://github.com/fagao-ai/vesper/releases) 下载对应平台的安装包：
 
 #### macOS
 - **Intel 芯片**: `Vesper-{version}-macOS-x86_64.dmg` - 适用于 Intel Mac (2015-2020)
@@ -77,7 +77,7 @@ Vesper 是一个现代化的 SSH 隧道管理器，提供直观的界面来管�
 #### 构建步骤
 ```bash
 # 克隆仓库
-git clone https://github.com/yourusername/vesper.git
+git clone https://github.com/fagao-ai/vesper.git
 cd vesper
 
 # 安装依赖（推荐使用 pnpm）
@@ -275,7 +275,7 @@ strategy:
 
 ## 🐛 问题反馈
 
-请使用 [GitHub Issues](https://github.com/yourusername/vesper/issues) 报告 bug 或提出功能建议。
+请使用 [GitHub Issues](https://github.com/fagao-ai/vesper/issues) 报告 bug 或提出功能建议。
 
 ## 📈 开发路线图
 
