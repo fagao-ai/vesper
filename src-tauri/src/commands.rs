@@ -1,6 +1,7 @@
 use crate::ssh::{ConnectionManager, SSHConnection, SSHTunnel, AuthMethod, TunnelType, generate_id};
 use crate::settings::AppConfig;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tauri::State;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -51,7 +52,7 @@ pub struct UpdateTunnelRequest {
 
 // Initialize Data Storage
 #[tauri::command]
-pub async fn initialize_storage(manager: State<'_, ConnectionManager>) -> Result<(), String> {
+pub async fn initialize_storage(manager: State<'_, Arc<ConnectionManager>>) -> Result<(), String> {
     eprintln!("initialize_storage command called");
     let result = manager.initialize().await;
     eprintln!("initialize_storage command completed with result: {:?}", result);
@@ -62,7 +63,7 @@ pub async fn initialize_storage(manager: State<'_, ConnectionManager>) -> Result
 #[tauri::command]
 pub async fn create_connection(
     request: CreateConnectionRequest,
-    manager: State<'_, ConnectionManager>,
+    manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<String, String> {
     let auth_method = match request.auth_method.as_str() {
         "password" => AuthMethod::Password,
@@ -89,7 +90,7 @@ pub async fn create_connection(
 
 #[tauri::command]
 pub async fn get_connections(
-    manager: State<'_, ConnectionManager>,
+    manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<Vec<SSHConnection>, String> {
     Ok(manager.get_connections().await)
 }
@@ -97,7 +98,7 @@ pub async fn get_connections(
 #[tauri::command]
 pub async fn get_connection(
     id: String,
-    manager: State<'_, ConnectionManager>,
+    manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<Option<SSHConnection>, String> {
     Ok(manager.get_connection(&id).await)
 }
@@ -105,7 +106,7 @@ pub async fn get_connection(
 #[tauri::command]
 pub async fn update_connection(
     request: UpdateConnectionRequest,
-    manager: State<'_, ConnectionManager>,
+    manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<(), String> {
     let existing_connection = manager.get_connection(&request.id).await
         .ok_or("Connection not found")?;
@@ -136,7 +137,7 @@ pub async fn update_connection(
 #[tauri::command]
 pub async fn delete_connection(
     id: String,
-    manager: State<'_, ConnectionManager>,
+    manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<(), String> {
     manager.delete_connection(id).await
 }
@@ -144,7 +145,7 @@ pub async fn delete_connection(
 #[tauri::command]
 pub async fn test_connection(
     id: String,
-    manager: State<'_, ConnectionManager>,
+    manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<crate::ssh::ConnectionResult, String> {
     let connection = manager.get_connection(&id).await
         .ok_or("Connection not found")?;
@@ -184,7 +185,7 @@ pub async fn test_connection_data(
 #[tauri::command]
 pub async fn connect_ssh(
     id: String,
-    manager: State<'_, ConnectionManager>,
+    manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<crate::ssh::ConnectionResult, String> {
     Ok(manager.connect_ssh(&id).await)
 }
@@ -192,7 +193,7 @@ pub async fn connect_ssh(
 #[tauri::command]
 pub async fn disconnect_ssh(
     id: String,
-    manager: State<'_, ConnectionManager>,
+    manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<crate::ssh::ConnectionResult, String> {
     Ok(manager.disconnect_ssh(&id).await)
 }
@@ -201,7 +202,7 @@ pub async fn disconnect_ssh(
 #[tauri::command]
 pub async fn create_tunnel(
     request: CreateTunnelRequest,
-    manager: State<'_, ConnectionManager>,
+    manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<String, String> {
     let tunnel_type = match request.tunnel_type.as_str() {
         "local" => TunnelType::Local,
@@ -227,7 +228,7 @@ pub async fn create_tunnel(
 #[tauri::command]
 pub async fn update_tunnel(
     request: UpdateTunnelRequest,
-    manager: State<'_, ConnectionManager>,
+    manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<(), String> {
     // Get existing tunnels to find the current status
     let existing_tunnels = manager.get_tunnels().await;
@@ -258,7 +259,7 @@ pub async fn update_tunnel(
 
 #[tauri::command]
 pub async fn get_tunnels(
-    manager: State<'_, ConnectionManager>,
+    manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<Vec<SSHTunnel>, String> {
     Ok(manager.get_tunnels().await)
 }
@@ -266,7 +267,7 @@ pub async fn get_tunnels(
 #[tauri::command]
 pub async fn get_tunnels_by_connection(
     connection_id: String,
-    manager: State<'_, ConnectionManager>,
+    manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<Vec<SSHTunnel>, String> {
     Ok(manager.get_tunnels_by_connection(&connection_id).await)
 }
@@ -274,7 +275,7 @@ pub async fn get_tunnels_by_connection(
 #[tauri::command]
 pub async fn delete_tunnel(
     id: String,
-    manager: State<'_, ConnectionManager>,
+    manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<(), String> {
     eprintln!("delete_tunnel command received ID: {} (length: {})", id, id.len());
     manager.delete_tunnel(id).await
@@ -283,7 +284,7 @@ pub async fn delete_tunnel(
 #[tauri::command]
 pub async fn stop_tunnel(
     id: String,
-    manager: State<'_, ConnectionManager>,
+    manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<(), String> {
     manager.stop_tunnel(id).await
 }
