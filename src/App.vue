@@ -11,6 +11,8 @@ import TunnelModal from './components/TunnelModal.vue';
 import EditTunnelModal from './components/EditTunnelModal.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import type { SSHConnection, SSHTunnel } from './types';
+import { createTray, updateTrayLanguage } from './utils/tray';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 const connectionsStore = useConnectionsStore();
 const settingsStore = useSettingsStore();
@@ -25,7 +27,6 @@ onMounted(async () => {
 
     // 确保使用从 backend 获取的语言设置
     const backendLanguage = settingsStore.settings.language as 'zh' | 'en';
-    console.log('Backend language:', backendLanguage);
 
     // 初始化 theme，language 已经在 useI18n 中从 localStorage 初始化了
     initTheme();
@@ -37,6 +38,24 @@ onMounted(async () => {
 
     // 最后初始化 connections store
     await connectionsStore.initialize();
+
+    // 初始化系统托盘 - 延迟一点确保应用完全加载
+    setTimeout(async () => {
+      try {
+        await createTray();
+      } catch (error) {
+        console.error('系统托盘初始化失败:', error);
+      }
+    }, 500);
+
+    // 初始化窗口关闭处理器
+    const appWindow = getCurrentWindow();
+    await appWindow.onCloseRequested(async (event) => {
+      // 阻止默认关闭行为
+      event.preventDefault();
+      // 隐藏窗口
+      await appWindow.hide();
+    });
   } catch (error) {
     console.error('Failed to initialize stores:', error);
   }
@@ -49,6 +68,8 @@ watch(() => settingsStore.settings.theme, (newTheme) => {
 
 watch(() => settingsStore.settings.language, (newLanguage) => {
   setLanguage(newLanguage as 'zh' | 'en');
+  // 更新托盘菜单语言
+  updateTrayLanguage();
 });
 
 // UI State
@@ -360,7 +381,7 @@ const openGitHub = async () => {
         </div>
 
         <!-- Right Panel - Connection Details -->
-        <div class="flex-1 flex flex-col bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <div class="flex-1 flex flex-col bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden pl-2">
           <div class="flex-1 overflow-hidden">
             <ConnectionDetail
               :connection="selectedConnection"

@@ -93,7 +93,9 @@ const translations: Translations = {
     status_error: '连接错误',
     no_tunnel_config: '暂无隧道配置',
     create_first_tunnel: '创建第一个隧道',
-    edit_tunnel_coming_soon: '编辑隧道功能即将推出'
+    edit_tunnel_coming_soon: '编辑隧道功能即将推出',
+    tray_show: '显示窗口',
+    tray_quit: '退出'
   },
   en: {
     app_title: 'Vesper',
@@ -178,7 +180,9 @@ const translations: Translations = {
     status_error: 'Connection Error',
     no_tunnel_config: 'No tunnel configuration',
     create_first_tunnel: 'Create First Tunnel',
-    edit_tunnel_coming_soon: 'Edit tunnel feature coming soon'
+    edit_tunnel_coming_soon: 'Edit tunnel feature coming soon',
+    tray_show: 'Show Window',
+    tray_quit: 'Quit'
   }
 };
 
@@ -214,7 +218,6 @@ export function useI18n() {
 
   // 设置语言
   const setLanguage = (lang: Language) => {
-    console.log('setLanguage called:', lang, 'Previous:', language.value);
     language.value = lang;
     // 更新 localStorage
     if (typeof window !== 'undefined') {
@@ -226,23 +229,18 @@ export function useI18n() {
 
   // 初始化语言 - 确保使用后端设置（如果不同于当前）
   const initLanguage = async (backendLang?: Language) => {
-    console.log('initLanguage called with:', backendLang, 'Current language:', language.value);
-
     // 如果后端语言与当前语言不同，更新为后端语言
     if (backendLang && ['zh', 'en'].includes(backendLang) && backendLang !== language.value) {
       language.value = backendLang;
       localStorage.setItem('language', backendLang);
-      console.log('Updated language from backend:', backendLang);
     }
 
     // 确保文档语言属性正确设置
     document.documentElement.lang = language.value;
-    console.log('Final language value:', language.value);
   };
 
   // 监听 backend 设置的变化并同步语言
   watch(() => settingsStore.settings.language, (newLanguage) => {
-    console.log('Language watcher triggered:', newLanguage, 'Current:', language.value);
     if (newLanguage && ['zh', 'en'].includes(newLanguage)) {
       setLanguage(newLanguage as Language);
       // 同步更新 localStorage 作为后备

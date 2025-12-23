@@ -1,11 +1,13 @@
-mod ssh;
 mod commands;
-mod storage;
 mod settings;
+mod ssh;
+mod storage;
+// mod tray; // TODO: Re-enable when Tauri v2 tray API stabilizes
 
 use ssh::ConnectionManager;
 use std::sync::Arc;
 use tauri::Manager;
+use tauri::Listener;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -13,14 +15,20 @@ pub fn run() {
     let connection_manager = Arc::new(ConnectionManager::new());
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .manage(Arc::clone(&connection_manager))
         .setup(|app| {
             let manager = app.state::<Arc<ConnectionManager>>().inner().clone();
             tauri::async_runtime::spawn(async move {
                 manager.start_health_monitoring().await;
             });
+
+            // TODO: Initialize system tray when API stabilizes
+            // tray::create_tray(app)?;
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

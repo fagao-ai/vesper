@@ -53,10 +53,7 @@ pub struct UpdateTunnelRequest {
 // Initialize Data Storage
 #[tauri::command]
 pub async fn initialize_storage(manager: State<'_, Arc<ConnectionManager>>) -> Result<(), String> {
-    eprintln!("initialize_storage command called");
-    let result = manager.initialize().await;
-    eprintln!("initialize_storage command completed with result: {:?}", result);
-    result
+    manager.initialize().await
 }
 
 // SSH Connection Commands
@@ -277,7 +274,6 @@ pub async fn delete_tunnel(
     id: String,
     manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<(), String> {
-    eprintln!("delete_tunnel command received ID: {} (length: {})", id, id.len());
     manager.delete_tunnel(id).await
 }
 

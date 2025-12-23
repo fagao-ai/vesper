@@ -99,9 +99,11 @@
                   type="success"
                   size="small"
                   circle
+                  :loading="connection.status === 'connecting'"
+                  :disabled="connection.status === 'connecting'"
                   @click.stop="$emit('connect', connection.id)"
                 >
-                  <el-icon><VideoPlay /></el-icon>
+                  <el-icon v-if="connection.status !== 'connecting'"><VideoPlay /></el-icon>
                 </el-button>
                 <el-button
                   v-else-if="connection.status === 'connected'"
