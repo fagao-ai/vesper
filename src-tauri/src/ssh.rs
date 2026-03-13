@@ -107,6 +107,7 @@ enum TunnelExitReason {
 const HEALTH_CHECK_INTERVAL_SECS: u64 = 60;
 const SSH_KEEPALIVE_INTERVAL_SECS: u64 = 30;
 const SSH_KEEPALIVE_FAILURE_THRESHOLD: u8 = 3;
+const SSH_CONNECT_TIMEOUT_SECS: u64 = 30;
 const TUNNEL_STOP_TIMEOUT_SECS: u64 = 5;
 const RECONNECT_DELAY_SECS: u64 = 5;
 
@@ -904,6 +905,23 @@ impl ConnectionManager {
 async fn establish_ssh_session(
     connection: &SSHConnection,
 ) -> Result<AsyncSession<TokioTcpStream>, String> {
+    match timeout(
+        Duration::from_secs(SSH_CONNECT_TIMEOUT_SECS),
+        establish_ssh_session_inner(connection),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Err(format!(
+            "SSH connection timed out after {} seconds",
+            SSH_CONNECT_TIMEOUT_SECS
+        )),
+    }
+}
+
+async fn establish_ssh_session_inner(
+    connection: &SSHConnection,
+) -> Result<AsyncSession<TokioTcpStream>, String> {
     let connection = connection.clone();
 
     // Try to establish TCP connection
@@ -1308,9 +1326,8 @@ async fn run_remote_forwarding_loop(
 
 // Test SSH connection
 pub async fn test_ssh_connection(connection: &SSHConnection) -> ConnectionResult {
-    // Set 5 second timeout
     match timeout(
-        Duration::from_secs(5),
+        Duration::from_secs(SSH_CONNECT_TIMEOUT_SECS),
         test_ssh_connection_async(connection),
     )
     .await
@@ -1318,7 +1335,10 @@ pub async fn test_ssh_connection(connection: &SSHConnection) -> ConnectionResult
         Ok(result) => result,
         Err(_) => ConnectionResult {
             success: false,
-            message: "SSH connection test timed out".to_string(),
+            message: format!(
+                "SSH connection test timed out after {} seconds",
+                SSH_CONNECT_TIMEOUT_SECS
+            ),
             error_code: Some("TIMEOUT".to_string()),
         },
     }
