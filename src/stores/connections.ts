@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia';
+import { acceptHMRUpdate, defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { sshApi } from '../services/ssh';
 import type { SSHConnection, SSHTunnel } from '../types';
@@ -9,6 +9,7 @@ export const useConnectionsStore = defineStore('connections', () => {
   const tunnels = ref<SSHTunnel[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  let syncPromise: Promise<void> | null = null;
 
   // Getters
   const connectedConnections = computed(() =>
@@ -24,6 +25,44 @@ export const useConnectionsStore = defineStore('connections', () => {
 
   const getTunnelsByConnectionId = (connectionId: string) =>
     tunnels.value.filter(tunnel => tunnel.connection_id === connectionId);
+
+  const syncState = async (options: { silent?: boolean } = {}) => {
+    const { silent = false } = options;
+
+    if (syncPromise) {
+      return syncPromise;
+    }
+
+    syncPromise = (async () => {
+      try {
+        if (!silent) {
+          loading.value = true;
+          error.value = null;
+        }
+
+        const [connectionsData, tunnelsData] = await Promise.all([
+          sshApi.getConnections(),
+          sshApi.getTunnels()
+        ]);
+
+        connections.value = connectionsData;
+        tunnels.value = tunnelsData;
+      } catch (err) {
+        if (!silent) {
+          error.value = err as string;
+        }
+        console.error('Failed to sync state from backend:', err);
+        throw err;
+      } finally {
+        if (!silent) {
+          loading.value = false;
+        }
+        syncPromise = null;
+      }
+    })();
+
+    return syncPromise;
+  };
 
   // Actions
   const fetchConnections = async () => {
@@ -174,31 +213,22 @@ export const useConnectionsStore = defineStore('connections', () => {
   const connectSSH = async (id: string) => {
     try {
       error.value = null;
-      const connection = getConnectionById(id);
-      if (!connection) {
+      if (!getConnectionById(id)) {
         console.warn(`Attempted to connect to non-existent connection: ${id}. Skipping connection.`);
         return { success: false, message: 'Connection not found', error_code: 'NOT_FOUND' };
       }
 
       const result = await sshApi.connectSSH(id);
-
-      // Update connection status locally
-      if (connection && result.success) {
-        connection.status = 'connected';
-        connection.last_connected = new Date();
-      }
-
+      await syncState({ silent: true });
       return result;
     } catch (err) {
       error.value = err as string;
       console.error('Failed to connect SSH:', err);
-
-      // Update connection status to error
-      const connection = getConnectionById(id);
-      if (connection) {
-        connection.status = 'error';
+      try {
+        await syncState({ silent: true });
+      } catch (syncErr) {
+        console.warn('Failed to refresh state after connect error:', syncErr);
       }
-
       throw err;
     }
   };
@@ -206,23 +236,22 @@ export const useConnectionsStore = defineStore('connections', () => {
   const disconnectSSH = async (id: string) => {
     try {
       error.value = null;
-      const connection = getConnectionById(id);
-      if (!connection) {
+      if (!getConnectionById(id)) {
         console.warn(`Attempted to disconnect from non-existent connection: ${id}. Skipping disconnection.`);
         return { success: false, message: 'Connection not found', error_code: 'NOT_FOUND' };
       }
 
       const result = await sshApi.disconnectSSH(id);
-
-      // Update connection status locally
-      if (connection && result.success) {
-        connection.status = 'disconnected';
-      }
-
+      await syncState({ silent: true });
       return result;
     } catch (err) {
       error.value = err as string;
       console.error('Failed to disconnect SSH:', err);
+      try {
+        await syncState({ silent: true });
+      } catch (syncErr) {
+        console.warn('Failed to refresh state after disconnect error:', syncErr);
+      }
       throw err;
     }
   };
@@ -272,11 +301,7 @@ export const useConnectionsStore = defineStore('connections', () => {
         auto_reconnect: updates.auto_reconnect !== undefined ? updates.auto_reconnect : currentTunnel.auto_reconnect
       });
 
-      // Update local state
-      const tunnelIndex = tunnels.value.findIndex(t => t.id === id);
-      if (tunnelIndex !== -1) {
-        Object.assign(tunnels.value[tunnelIndex], updates);
-      }
+      await syncState({ silent: true });
     } catch (err) {
       error.value = err as string;
       console.error('Failed to update tunnel:', err);
@@ -288,9 +313,7 @@ export const useConnectionsStore = defineStore('connections', () => {
     try {
       error.value = null;
       await sshApi.deleteTunnel(id);
-
-      // Update local state
-      tunnels.value = tunnels.value.filter(tunnel => tunnel.id !== id);
+      await syncState({ silent: true });
     } catch (err) {
       error.value = err as string;
       console.error('Failed to delete tunnel:', err);
@@ -302,15 +325,33 @@ export const useConnectionsStore = defineStore('connections', () => {
     try {
       error.value = null;
       await sshApi.stopTunnel(id);
-
-      // Update local state
-      const tunnelIndex = tunnels.value.findIndex(t => t.id === id);
-      if (tunnelIndex !== -1) {
-        tunnels.value[tunnelIndex].status = 'inactive';
-      }
+      await syncState({ silent: true });
     } catch (err) {
       error.value = err as string;
       console.error('Failed to stop tunnel:', err);
+      throw err;
+    }
+  };
+
+  const startTunnel = async (id: string) => {
+    try {
+      error.value = null;
+      const tunnel = tunnels.value.find(item => item.id === id);
+      if (!tunnel) {
+        return { success: false, message: 'Tunnel not found', error_code: 'NOT_FOUND' };
+      }
+
+      const result = await sshApi.startTunnel(id);
+      await syncState({ silent: true });
+      return result;
+    } catch (err) {
+      error.value = err as string;
+      console.error('Failed to start tunnel:', err);
+      try {
+        await syncState({ silent: true });
+      } catch (syncErr) {
+        console.warn('Failed to refresh state after tunnel start error:', syncErr);
+      }
       throw err;
     }
   };
@@ -347,10 +388,7 @@ export const useConnectionsStore = defineStore('connections', () => {
       tunnels.value = [];
       error.value = null;
 
-      await Promise.all([
-        fetchConnections(),
-        fetchTunnels()
-      ]);
+      await syncState();
     } catch (err) {
       error.value = err as string;
       console.error('Failed to initialize store:', err);
@@ -375,6 +413,7 @@ export const useConnectionsStore = defineStore('connections', () => {
 
     // Actions
     initialize,
+    syncState,
     fetchConnections,
     fetchTunnels,
     addConnection,
@@ -386,7 +425,12 @@ export const useConnectionsStore = defineStore('connections', () => {
     addTunnel,
     updateTunnel,
     removeTunnel,
+    startTunnel,
     stopTunnel,
     loadTunnelsByConnection
   };
 });
+
+if (import.meta.hot) {
+  import.meta.hot.accept(acceptHMRUpdate(useConnectionsStore, import.meta.hot));
+}

@@ -1,14 +1,15 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::RwLock;
-use tokio::time::{timeout, Duration, interval};
+use tokio::net::{TcpListener, TcpSocket, TcpStream};
+use tokio::sync::{oneshot, RwLock};
+use tokio::task::{JoinHandle, JoinSet};
+use tokio::time::{interval, timeout, Duration};
 use uuid::Uuid;
 
-use async_ssh2_lite::{AsyncSession, TokioTcpStream};
+use async_ssh2_lite::{AsyncListener, AsyncSession, SessionConfiguration, TokioTcpStream};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SSHConnection {
@@ -62,19 +63,10 @@ pub struct SSHTunnel {
     pub auto_reconnect: bool,
 }
 
-// Active tunnel handle for managing port forwarding
-pub enum TunnelHandle {
-    Local {
-        _task_handle: tokio::task::JoinHandle<()>,
-    },
-    Remote {
-        _task_handle: tokio::task::JoinHandle<()>,
-    },
-}
-
 pub struct ActiveTunnel {
     pub tunnel: SSHTunnel,
-    pub handle: TunnelHandle,
+    shutdown_tx: Option<oneshot::Sender<TunnelControl>>,
+    task_handle: JoinHandle<()>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,12 +91,32 @@ pub struct ConnectionResult {
     pub error_code: Option<String>,
 }
 
+#[derive(Debug, Clone)]
+enum TunnelControl {
+    Stop,
+    ConnectionLost(String),
+}
+
+#[derive(Debug)]
+enum TunnelExitReason {
+    Stopped,
+    ConnectionLost(String),
+    TunnelError(String),
+}
+
+const HEALTH_CHECK_INTERVAL_SECS: u64 = 60;
+const SSH_KEEPALIVE_INTERVAL_SECS: u64 = 30;
+const SSH_KEEPALIVE_FAILURE_THRESHOLD: u8 = 3;
+const TUNNEL_STOP_TIMEOUT_SECS: u64 = 5;
+const RECONNECT_DELAY_SECS: u64 = 5;
+
 #[derive(Clone)]
 pub struct ConnectionManager {
     connections: Arc<RwLock<HashMap<String, SSHConnection>>>,
     tunnels: Arc<RwLock<HashMap<String, SSHTunnel>>>,
     ssh_sessions: Arc<RwLock<HashMap<String, Arc<AsyncSession<TokioTcpStream>>>>>,
     active_tunnels: Arc<RwLock<HashMap<String, ActiveTunnel>>>,
+    reconnecting_connections: Arc<RwLock<HashSet<String>>>,
 }
 
 impl ConnectionManager {
@@ -114,6 +126,7 @@ impl ConnectionManager {
             tunnels: Arc::new(RwLock::new(HashMap::new())),
             ssh_sessions: Arc::new(RwLock::new(HashMap::new())),
             active_tunnels: Arc::new(RwLock::new(HashMap::new())),
+            reconnecting_connections: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -121,7 +134,7 @@ impl ConnectionManager {
     pub async fn start_health_monitoring(&self) {
         let manager = self.clone();
         tokio::spawn(async move {
-            let mut interval = interval(Duration::from_secs(60)); // Check every minute
+            let mut interval = interval(Duration::from_secs(HEALTH_CHECK_INTERVAL_SECS));
             loop {
                 interval.tick().await;
 
@@ -162,17 +175,25 @@ impl ConnectionManager {
     }
 
     async fn save_to_storage(&self) -> Result<(), String> {
-        use crate::storage::DataManager;
-        let data_manager = DataManager::new()?;
+        #[cfg(test)]
+        {
+            Ok(())
+        }
 
-        let connections = self.connections.read().await;
-        let tunnels = self.tunnels.read().await;
+        #[cfg(not(test))]
+        {
+            use crate::storage::DataManager;
 
-        data_manager
-            .save_connections_and_tunnels(&*connections, &*tunnels)
-            .await?;
+            let data_manager = DataManager::new()?;
+            let connections = self.connections.read().await;
+            let tunnels = self.tunnels.read().await;
 
-        Ok(())
+            data_manager
+                .save_connections_and_tunnels(&*connections, &*tunnels)
+                .await?;
+
+            Ok(())
+        }
     }
 
     pub async fn add_connection(&self, connection: SSHConnection) -> Result<String, String> {
@@ -216,30 +237,9 @@ impl ConnectionManager {
     }
 
     pub async fn delete_connection(&self, id: String) -> Result<(), String> {
-        // Stop all active tunnels for this connection first
-        {
-            let mut active_tunnels = self.active_tunnels.write().await;
-            let tunnels_to_remove: Vec<String> = active_tunnels
-                .iter()
-                .filter(|(_, tunnel)| tunnel.tunnel.connection_id == id)
-                .map(|(tunnel_id, _)| tunnel_id.clone())
-                .collect();
-
-            for tunnel_id in tunnels_to_remove {
-                if let Some(active_tunnel) = active_tunnels.remove(&tunnel_id) {
-                    match active_tunnel.handle {
-                        TunnelHandle::Local { _task_handle } => {
-                            println!("Stopping local tunnel {} for connection {}", tunnel_id, id);
-                            _task_handle.abort();
-                        }
-                        TunnelHandle::Remote { _task_handle } => {
-                            println!("Stopping remote tunnel {} for connection {}", tunnel_id, id);
-                            _task_handle.abort();
-                        }
-                    }
-                }
-            }
-        }
+        self.stop_tunnels_for_connection(&id, TunnelControl::Stop)
+            .await;
+        self.close_ssh_session(&id, "Connection deleted").await;
 
         {
             let mut connections = self.connections.write().await;
@@ -270,145 +270,199 @@ impl ConnectionManager {
     }
 
     pub async fn connect_ssh(&self, id: &str) -> ConnectionResult {
-        let mut connections = self.connections.write().await;
-        let connection_clone = connections.get(id).cloned();
+        let connect_result = self.ensure_ssh_session(id).await;
+        if !connect_result.success {
+            return connect_result;
+        }
 
-        if connection_clone.is_none() {
+        let tunnel_start_error = match self.start_all_tunnels_for_connection(id).await {
+            Ok(()) => None,
+            Err(error) => {
+                eprintln!("Failed to start tunnels: {}", error);
+                Some(error)
+            }
+        };
+
+        if let Err(e) = self.save_to_storage().await {
+            eprintln!("Failed to save data: {}", e);
+        }
+
+        if let Some(error) = tunnel_start_error {
+            ConnectionResult {
+                success: true,
+                message: format!(
+                    "SSH connection established, but some tunnels failed to start: {}",
+                    error
+                ),
+                error_code: Some("TUNNEL_START_FAILED".to_string()),
+            }
+        } else {
+            ConnectionResult {
+                success: true,
+                message: "SSH connection established".to_string(),
+                error_code: None,
+            }
+        }
+    }
+
+    pub async fn start_tunnel(&self, id: &str) -> ConnectionResult {
+        let tunnel = {
+            let tunnels = self.tunnels.read().await;
+            tunnels.get(id).cloned()
+        };
+
+        let Some(tunnel) = tunnel else {
+            return ConnectionResult {
+                success: false,
+                message: "Tunnel not found".to_string(),
+                error_code: Some("NOT_FOUND".to_string()),
+            };
+        };
+
+        let connect_result = self.ensure_ssh_session(&tunnel.connection_id).await;
+        if !connect_result.success {
+            return connect_result;
+        }
+
+        match self.start_tunnels_by_ids(&tunnel.connection_id, &[tunnel.id.clone()]).await {
+            Ok(()) => {
+                if let Err(e) = self.save_to_storage().await {
+                    eprintln!("Failed to save data: {}", e);
+                }
+
+                ConnectionResult {
+                    success: true,
+                    message: format!("Tunnel {} started", tunnel.name),
+                    error_code: None,
+                }
+            }
+            Err(error) => {
+                self.set_tunnel_status(&tunnel.id, TunnelStatus::Error).await;
+                if let Err(e) = self.save_to_storage().await {
+                    eprintln!("Failed to save data: {}", e);
+                }
+
+                ConnectionResult {
+                    success: false,
+                    message: error,
+                    error_code: Some("TUNNEL_START_FAILED".to_string()),
+                }
+            }
+        }
+    }
+
+    async fn ensure_ssh_session(&self, id: &str) -> ConnectionResult {
+        let connection = {
+            let connections = self.connections.read().await;
+            connections.get(id).cloned()
+        };
+
+        let Some(connection) = connection else {
             return ConnectionResult {
                 success: false,
                 message: "Connection not found".to_string(),
+                error_code: Some("NOT_FOUND".to_string()),
+            };
+        };
+
+        let existing_session = {
+            let sessions = self.ssh_sessions.read().await;
+            sessions.get(id).cloned()
+        };
+
+        if existing_session.is_some() {
+            let mut connections = self.connections.write().await;
+            if let Some(conn) = connections.get_mut(id) {
+                conn.status = ConnectionStatus::Connected;
+                if conn.last_connected.is_none() {
+                    conn.last_connected = Some(SystemTime::now());
+                }
+            }
+
+            return ConnectionResult {
+                success: true,
+                message: "SSH connection already established".to_string(),
                 error_code: None,
             };
         }
 
-        if let Some(connection) = connections.get_mut(id) {
-            connection.status = ConnectionStatus::Connecting;
-            drop(connections); // Release the lock
+        {
+            let mut connections = self.connections.write().await;
+            if let Some(conn) = connections.get_mut(id) {
+                conn.status = ConnectionStatus::Connecting;
+            }
+        }
 
-            // Test the connection first
-            let test_result = test_ssh_connection(&connection_clone.as_ref().unwrap()).await;
+        let test_result = test_ssh_connection(&connection).await;
+        if !test_result.success {
+            let mut connections = self.connections.write().await;
+            if let Some(conn) = connections.get_mut(id) {
+                conn.status = ConnectionStatus::Error;
+            }
+            return test_result;
+        }
 
-            if !test_result.success {
-                // Update connection status to error
+        match establish_ssh_session(&connection).await {
+            Ok(session) => {
+                self.close_ssh_session(id, "Replacing existing SSH session")
+                    .await;
+
+                let mut sessions = self.ssh_sessions.write().await;
+                sessions.insert(id.to_string(), Arc::new(session));
+                drop(sessions);
+
+                let mut connections = self.connections.write().await;
+                if let Some(conn) = connections.get_mut(id) {
+                    conn.status = ConnectionStatus::Connected;
+                    conn.last_connected = Some(SystemTime::now());
+                }
+
+                ConnectionResult {
+                    success: true,
+                    message: "SSH connection established".to_string(),
+                    error_code: None,
+                }
+            }
+            Err(e) => {
                 let mut connections = self.connections.write().await;
                 if let Some(conn) = connections.get_mut(id) {
                     conn.status = ConnectionStatus::Error;
                 }
-                return test_result;
-            }
 
-            // If test passes, establish real SSH connection and store session
-            match establish_ssh_session(&connection_clone.as_ref().unwrap()).await {
-                Ok(session) => {
-                    // Store the SSH session
-                    let mut sessions = self.ssh_sessions.write().await;
-                    sessions.insert(id.to_string(), Arc::new(session));
-                    drop(sessions);
-
-                    // Update connection status
-                    let mut connections = self.connections.write().await;
-                    if let Some(conn) = connections.get_mut(id) {
-                        conn.status = ConnectionStatus::Connected;
-                        conn.last_connected = Some(SystemTime::now());
-                    }
-                    drop(connections);
-
-                    // Start all tunnels for this connection
-                    if let Err(e) = self.start_all_tunnels_for_connection(id).await {
-                        eprintln!("Failed to start tunnels: {}", e);
-                    }
-
-                    // Save to storage
-                    if let Err(e) = self.save_to_storage().await {
-                        eprintln!("Failed to save data: {}", e);
-                    }
-
-                    ConnectionResult {
-                        success: true,
-                        message: "SSH connection established".to_string(),
-                        error_code: None,
-                    }
+                ConnectionResult {
+                    success: false,
+                    message: format!("Failed to establish SSH connection: {}", e),
+                    error_code: Some("CONNECTION_FAILED".to_string()),
                 }
-                Err(e) => {
-                    // Update connection status to error
-                    let mut connections = self.connections.write().await;
-                    if let Some(conn) = connections.get_mut(id) {
-                        conn.status = ConnectionStatus::Error;
-                    }
-                    drop(connections);
-
-                    ConnectionResult {
-                        success: false,
-                        message: format!("Failed to establish SSH connection: {}", e),
-                        error_code: Some("CONNECTION_FAILED".to_string()),
-                    }
-                }
-            }
-        } else {
-            ConnectionResult {
-                success: false,
-                message: "Connection not found".to_string(),
-                error_code: Some("NOT_FOUND".to_string()),
             }
         }
     }
 
     pub async fn disconnect_ssh(&self, id: &str) -> ConnectionResult {
-        let mut connections = self.connections.write().await;
-        let mut sessions = self.ssh_sessions.write().await;
+        let connection_exists = {
+            let connections = self.connections.read().await;
+            connections.contains_key(id)
+        };
 
-        if let Some(connection) = connections.get_mut(id) {
-            connection.status = ConnectionStatus::Disconnected;
+        if !connection_exists {
+            return ConnectionResult {
+                success: false,
+                message: "Connection not found".to_string(),
+                error_code: Some("NOT_FOUND".to_string()),
+            };
+        } else {
+            self.stop_tunnels_for_connection(id, TunnelControl::Stop)
+                .await;
+            self.close_ssh_session(id, "User disconnected SSH session")
+                .await;
 
-            // First, gracefully close all active tunnels for this connection
-            let mut active_tunnels = self.active_tunnels.write().await;
-            let tunnel_ids_to_remove: Vec<String> = active_tunnels
-                .iter()
-                .filter(|(_, tunnel)| tunnel.tunnel.connection_id == id)
-                .map(|(id, _)| id.clone())
-                .collect();
-
-            for tunnel_id in tunnel_ids_to_remove {
-                println!("Gracefully stopping tunnel: {}", tunnel_id);
-
-                // Get the active tunnel before removing it
-                if let Some(active_tunnel) = active_tunnels.remove(&tunnel_id) {
-                    // Gracefully shutdown the tunnel task
-                    match active_tunnel.handle {
-                        TunnelHandle::Local { _task_handle } => {
-                            // Try to gracefully shutdown the task first
-                            _task_handle.abort();
-                        }
-                        TunnelHandle::Remote { _task_handle } => {
-                            // Try to gracefully shutdown the task first
-                            _task_handle.abort();
-                        }
-                    }
+            {
+                let mut connections = self.connections.write().await;
+                if let Some(connection) = connections.get_mut(id) {
+                    connection.status = ConnectionStatus::Disconnected;
                 }
             }
-            drop(active_tunnels);
 
-            // Update tunnel statuses to inactive
-            let connection_tunnels = self.get_tunnels_by_connection(id).await;
-            if !connection_tunnels.is_empty() {
-                let mut tunnels = self.tunnels.write().await;
-                for tunnel in connection_tunnels {
-                    if let Some(t) = tunnels.get_mut(&tunnel.id) {
-                        t.status = TunnelStatus::Inactive;
-                    }
-                }
-                drop(tunnels);
-            }
-
-            // Finally close SSH session
-            if let Some(session_arc) = sessions.remove(id) {
-                drop(session_arc); // Session will be dropped when Arc count goes to 0
-            }
-
-            drop(connections); // Release the lock
-            drop(sessions); // Release sessions lock
-
-            // Save to storage
             if let Err(e) = self.save_to_storage().await {
                 eprintln!("Failed to save data: {}", e);
             }
@@ -418,65 +472,42 @@ impl ConnectionManager {
                 message: "SSH connection and all tunnels closed gracefully".to_string(),
                 error_code: None,
             }
-        } else {
-            ConnectionResult {
-                success: false,
-                message: "Connection not found".to_string(),
-                error_code: Some("NOT_FOUND".to_string()),
-            }
         }
     }
 
     // Check if a connection is still alive and attempt reconnection if needed
     pub async fn check_connection_health(&self, id: &str) {
-        let sessions = self.ssh_sessions.read().await;
-        if let Some(session_arc) = sessions.get(id) {
-            let session = session_arc.clone();
-            drop(sessions);
+        let session = {
+            let sessions = self.ssh_sessions.read().await;
+            sessions.get(id).cloned()
+        };
 
-            // Try to execute a simple command to check if connection is alive
-            match session.channel_session().await {
-                Ok(mut channel) => {
-                    if let Err(_) = channel.exec("true").await {
-                        eprintln!("Connection {} appears to be disconnected", id);
-                        drop(channel);
+        let Some(session) = session else {
+            let is_connected = {
+                let connections = self.connections.read().await;
+                connections
+                    .get(id)
+                    .map(|connection| matches!(connection.status, ConnectionStatus::Connected))
+                    .unwrap_or(false)
+            };
 
-                        // Get connection info for reconnection
-                        let connections = self.connections.read().await;
-                        if let Some(conn) = connections.get(id) {
-                            let _connection = conn.clone();
-                            drop(connections);
-
-                            // Check if any tunnel has auto_reconnect enabled
-                            let connection_tunnels = self.get_tunnels_by_connection(id).await;
-                            let has_auto_reconnect = connection_tunnels.iter().any(|t| t.auto_reconnect);
-
-                            if has_auto_reconnect {
-                                eprintln!("Attempting to reconnect connection {} (auto-reconnect enabled)", id);
-
-                                // First disconnect cleanly
-                                let _ = self.disconnect_ssh(id).await;
-
-                                // Wait a bit before reconnecting
-                                tokio::time::sleep(Duration::from_secs(5)).await;
-
-                                // Attempt to reconnect
-                                let reconnect_result = self.connect_ssh(id).await;
-                                if reconnect_result.success {
-                                    eprintln!("Successfully reconnected connection {}", id);
-                                } else {
-                                    eprintln!("Failed to reconnect connection {}: {}", id, reconnect_result.message);
-                                }
-                            }
-                        }
-                    } else {
-                        drop(channel);
-                    }
-                }
-                Err(_) => {
-                    eprintln!("Failed to create channel for connection health check on {}", id);
-                }
+            if is_connected {
+                self.handle_connection_failure(
+                    id,
+                    format!(
+                        "Connection {} is marked connected but has no SSH session",
+                        id
+                    ),
+                )
+                .await;
             }
+            return;
+        };
+
+        if let Err(err) = session.keepalive_send().await {
+            let reason = format!("SSH keepalive failed for connection {}: {}", id, err);
+            eprintln!("{}", reason);
+            self.handle_connection_failure(id, reason).await;
         }
     }
 
@@ -515,29 +546,11 @@ impl ConnectionManager {
     }
 
     pub async fn delete_tunnel(&self, id: String) -> Result<(), String> {
+        self.stop_active_tunnel(&id, TunnelControl::Stop).await;
+
         let mut tunnels = self.tunnels.write().await;
-        let mut active_tunnels = self.active_tunnels.write().await;
-
-        // Stop the active tunnel if it exists
-        if let Some(active_tunnel) = active_tunnels.remove(&id) {
-            match active_tunnel.handle {
-                TunnelHandle::Local { _task_handle } => {
-                    // The task will be aborted when the handle is dropped
-                    println!("Stopping local tunnel: {}", id);
-                    _task_handle.abort();
-                }
-                TunnelHandle::Remote { _task_handle } => {
-                    // The task will be aborted when the handle is dropped
-                    println!("Stopping remote tunnel: {}", id);
-                    _task_handle.abort();
-                }
-            }
-        }
-
         tunnels.remove(&id);
-
         drop(tunnels);
-        drop(active_tunnels);
 
         self.save_to_storage().await?;
         Ok(())
@@ -548,7 +561,6 @@ impl ConnectionManager {
         tunnels.values().cloned().collect()
     }
 
-  
     pub async fn get_tunnels_by_connection(&self, connection_id: &str) -> Vec<SSHTunnel> {
         let tunnels = self.tunnels.read().await;
         tunnels
@@ -560,98 +572,331 @@ impl ConnectionManager {
 
     // Stop a tunnel without deleting it
     pub async fn stop_tunnel(&self, id: String) -> Result<(), String> {
-        let mut active_tunnels = self.active_tunnels.write().await;
-
-        // Stop the active tunnel if it exists
-        if let Some(active_tunnel) = active_tunnels.remove(&id) {
-            match active_tunnel.handle {
-                TunnelHandle::Local { _task_handle } => {
-                    println!("Stopping local tunnel: {}", id);
-                    _task_handle.abort();
-                }
-                TunnelHandle::Remote { _task_handle } => {
-                    println!("Stopping remote tunnel: {}", id);
-                    _task_handle.abort();
-                }
-            }
+        let stopped = self.stop_active_tunnel(&id, TunnelControl::Stop).await;
+        if !stopped {
+            self.set_tunnel_status(&id, TunnelStatus::Inactive).await;
         }
 
-        // Update tunnel status to inactive
-        {
-            let mut tunnels = self.tunnels.write().await;
-            if let Some(tunnel) = tunnels.get_mut(&id) {
-                tunnel.status = TunnelStatus::Inactive;
-            }
-        }
-
-        drop(active_tunnels);
         self.save_to_storage().await?;
         Ok(())
     }
 
     // Start all tunnels for a given connection
     async fn start_all_tunnels_for_connection(&self, connection_id: &str) -> Result<(), String> {
-        let connection_tunnels = self.get_tunnels_by_connection(connection_id).await;
+        let tunnel_ids: Vec<String> = self
+            .get_tunnels_by_connection(connection_id)
+            .await
+            .into_iter()
+            .map(|tunnel| tunnel.id)
+            .collect();
 
-        for tunnel in connection_tunnels {
-            let tunnel_id = tunnel.id.clone();
+        self.start_tunnels_by_ids(connection_id, &tunnel_ids).await
+    }
 
-            // Get session for each tunnel separately
+    async fn start_tunnels_by_ids(
+        &self,
+        connection_id: &str,
+        tunnel_ids: &[String],
+    ) -> Result<(), String> {
+        let id_set: HashSet<&str> = tunnel_ids.iter().map(String::as_str).collect();
+        let connection_tunnels: Vec<SSHTunnel> = self
+            .get_tunnels_by_connection(connection_id)
+            .await
+            .into_iter()
+            .filter(|tunnel| id_set.contains(tunnel.id.as_str()))
+            .collect();
+
+        let session = {
             let sessions = self.ssh_sessions.read().await;
-            if let Some(session_arc) = sessions.get(connection_id) {
-                let session = Arc::clone(session_arc);
-                drop(sessions);
+            sessions.get(connection_id).cloned()
+        };
 
-                match tunnel.tunnel_type {
-                    TunnelType::Local => {
-                        // Start local forwarding in a new task
-                        let handle = start_local_forwarding(&tunnel, session).await?;
+        let Some(session) = session else {
+            for tunnel in &connection_tunnels {
+                self.set_tunnel_status(&tunnel.id, TunnelStatus::Error)
+                    .await;
+            }
+            let error = format!(
+                "No active SSH session found for connection {}",
+                connection_id
+            );
+            if let Err(e) = self.save_to_storage().await {
+                eprintln!("Failed to save data: {}", e);
+            }
+            return Err(error);
+        };
 
-                        // Save the task handle in active_tunnels
-                        let active_tunnel = ActiveTunnel {
-                            tunnel: tunnel.clone(),
-                            handle: TunnelHandle::Local {
-                                _task_handle: handle,
-                            },
-                        };
+        self.start_tunnels_with_session(connection_tunnels, session).await
+    }
 
-                        let mut active_tunnels = self.active_tunnels.write().await;
-                        active_tunnels.insert(tunnel_id.clone(), active_tunnel);
+    async fn start_tunnels_with_session(
+        &self,
+        tunnels_to_start: Vec<SSHTunnel>,
+        session: Arc<AsyncSession<TokioTcpStream>>,
+    ) -> Result<(), String> {
+        let mut first_error = None;
 
-                        // Update tunnel status to Active
-                        drop(active_tunnels);
-                        let mut tunnels = self.tunnels.write().await;
-                        if let Some(t) = tunnels.get_mut(&tunnel_id) {
-                            t.status = TunnelStatus::Active;
-                        }
-                    }
-                    TunnelType::Remote => {
-                        // Start remote forwarding in a new task
-                        let handle = start_remote_forwarding(&tunnel, session).await?;
+        for tunnel in tunnels_to_start {
+            self.stop_active_tunnel(&tunnel.id, TunnelControl::Stop)
+                .await;
 
-                        // Save the task handle in active_tunnels
-                        let active_tunnel = ActiveTunnel {
-                            tunnel: tunnel.clone(),
-                            handle: TunnelHandle::Remote {
-                                _task_handle: handle,
-                            },
-                        };
-
-                        let mut active_tunnels = self.active_tunnels.write().await;
-                        active_tunnels.insert(tunnel_id.clone(), active_tunnel);
-
-                        // Update tunnel status to Active
-                        drop(active_tunnels);
-                        let mut tunnels = self.tunnels.write().await;
-                        if let Some(t) = tunnels.get_mut(&tunnel_id) {
-                            t.status = TunnelStatus::Active;
-                        }
+            match self
+                .start_tunnel_with_session(tunnel.clone(), session.clone())
+                .await
+            {
+                Ok(active_tunnel) => {
+                    let tunnel_id = tunnel.id.clone();
+                    let mut active_tunnels = self.active_tunnels.write().await;
+                    active_tunnels.insert(tunnel_id.clone(), active_tunnel);
+                    drop(active_tunnels);
+                    self.set_tunnel_status(&tunnel_id, TunnelStatus::Active)
+                        .await;
+                }
+                Err(err) => {
+                    eprintln!("Failed to start tunnel {}: {}", tunnel.id, err);
+                    self.set_tunnel_status(&tunnel.id, TunnelStatus::Error)
+                        .await;
+                    if first_error.is_none() {
+                        first_error = Some(err);
                     }
                 }
             }
         }
 
-        Ok(())
+        if let Err(e) = self.save_to_storage().await {
+            eprintln!("Failed to save data: {}", e);
+        }
+
+        if let Some(err) = first_error {
+            Err(err)
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn start_tunnel_with_session(
+        &self,
+        tunnel: SSHTunnel,
+        session: Arc<AsyncSession<TokioTcpStream>>,
+    ) -> Result<ActiveTunnel, String> {
+        match tunnel.tunnel_type {
+            TunnelType::Local => start_local_forwarding(self.clone(), tunnel, session).await,
+            TunnelType::Remote => start_remote_forwarding(self.clone(), tunnel, session).await,
+        }
+    }
+
+    async fn set_tunnel_status(&self, id: &str, status: TunnelStatus) {
+        let mut tunnels = self.tunnels.write().await;
+        if let Some(tunnel) = tunnels.get_mut(id) {
+            tunnel.status = status;
+        }
+    }
+
+    async fn close_ssh_session(&self, id: &str, description: &str) {
+        let session = {
+            let mut sessions = self.ssh_sessions.write().await;
+            sessions.remove(id)
+        };
+
+        if let Some(session) = session {
+            if let Err(err) = session.disconnect(None, description, None).await {
+                eprintln!("Failed to disconnect SSH session {} cleanly: {}", id, err);
+            }
+        }
+    }
+
+    async fn stop_tunnels_for_connection(&self, connection_id: &str, signal: TunnelControl) {
+        let tunnel_ids: Vec<String> = {
+            let active_tunnels = self.active_tunnels.read().await;
+            active_tunnels
+                .iter()
+                .filter(|(_, tunnel)| tunnel.tunnel.connection_id == connection_id)
+                .map(|(tunnel_id, _)| tunnel_id.clone())
+                .collect()
+        };
+
+        for tunnel_id in tunnel_ids {
+            self.stop_active_tunnel(&tunnel_id, signal.clone()).await;
+        }
+    }
+
+    async fn stop_active_tunnel(&self, tunnel_id: &str, signal: TunnelControl) -> bool {
+        let active_tunnel = {
+            let mut active_tunnels = self.active_tunnels.write().await;
+            active_tunnels.remove(tunnel_id)
+        };
+
+        let Some(mut active_tunnel) = active_tunnel else {
+            return false;
+        };
+
+        println!(
+            "Stopping {:?} tunnel: {}",
+            active_tunnel.tunnel.tunnel_type, tunnel_id
+        );
+
+        if let Some(shutdown_tx) = active_tunnel.shutdown_tx.take() {
+            let _ = shutdown_tx.send(signal);
+        }
+
+        let mut task_handle = active_tunnel.task_handle;
+        match timeout(
+            Duration::from_secs(TUNNEL_STOP_TIMEOUT_SECS),
+            &mut task_handle,
+        )
+        .await
+        {
+            Ok(join_result) => {
+                if let Err(err) = join_result {
+                    if !err.is_cancelled() {
+                        eprintln!("Tunnel task {} exited with error: {}", tunnel_id, err);
+                    }
+                }
+            }
+            Err(_) => {
+                eprintln!(
+                    "Tunnel {} did not exit in time, aborting the task",
+                    tunnel_id
+                );
+                task_handle.abort();
+                let _ = task_handle.await;
+            }
+        }
+
+        true
+    }
+
+    async fn handle_tunnel_runtime_exit(&self, tunnel: SSHTunnel, exit_reason: TunnelExitReason) {
+        {
+            let mut active_tunnels = self.active_tunnels.write().await;
+            active_tunnels.remove(&tunnel.id);
+        }
+
+        match exit_reason {
+            TunnelExitReason::Stopped => {
+                self.set_tunnel_status(&tunnel.id, TunnelStatus::Inactive)
+                    .await;
+            }
+            TunnelExitReason::TunnelError(message) => {
+                eprintln!("Tunnel {} exited with an error: {}", tunnel.id, message);
+                self.set_tunnel_status(&tunnel.id, TunnelStatus::Error)
+                    .await;
+            }
+            TunnelExitReason::ConnectionLost(message) => {
+                eprintln!(
+                    "Tunnel {} detected SSH session loss: {}",
+                    tunnel.id, message
+                );
+                self.set_tunnel_status(&tunnel.id, TunnelStatus::Error)
+                    .await;
+                self.handle_connection_failure(&tunnel.connection_id, message)
+                    .await;
+            }
+        }
+
+        if let Err(err) = self.save_to_storage().await {
+            eprintln!("Failed to save data: {}", err);
+        }
+    }
+
+    async fn handle_connection_failure(&self, id: &str, reason: String) {
+        let restart_tunnel_ids: Vec<String> = {
+            let active_tunnels = self.active_tunnels.read().await;
+            active_tunnels
+                .values()
+                .filter(|active_tunnel| {
+                    active_tunnel.tunnel.connection_id == id && active_tunnel.tunnel.auto_reconnect
+                })
+                .map(|active_tunnel| active_tunnel.tunnel.id.clone())
+                .collect()
+        };
+
+        self.stop_tunnels_for_connection(id, TunnelControl::ConnectionLost(reason.clone()))
+            .await;
+        self.close_ssh_session(id, "SSH session lost").await;
+
+        {
+            let mut connections = self.connections.write().await;
+            if let Some(connection) = connections.get_mut(id) {
+                connection.status = ConnectionStatus::Error;
+            } else {
+                return;
+            }
+        }
+
+        if let Err(err) = self.save_to_storage().await {
+            eprintln!("Failed to save data: {}", err);
+        }
+
+        if !restart_tunnel_ids.is_empty() {
+            self.spawn_connection_reconnect(id.to_string(), reason, restart_tunnel_ids);
+        }
+    }
+
+    fn spawn_connection_reconnect(
+        &self,
+        id: String,
+        reason: String,
+        restart_tunnel_ids: Vec<String>,
+    ) {
+        let manager = self.clone();
+        tokio::spawn(async move {
+            let should_reconnect = {
+                let mut reconnecting_connections = manager.reconnecting_connections.write().await;
+                reconnecting_connections.insert(id.clone())
+            };
+
+            if !should_reconnect {
+                eprintln!("Reconnect for connection {} is already in progress", id);
+                return;
+            }
+
+            eprintln!(
+                "Attempting to reconnect connection {} after failure: {}",
+                id, reason
+            );
+
+            {
+                let mut connections = manager.connections.write().await;
+                if let Some(connection) = connections.get_mut(&id) {
+                    connection.status = ConnectionStatus::Connecting;
+                } else {
+                    manager.reconnecting_connections.write().await.remove(&id);
+                    return;
+                }
+            }
+
+            if let Err(err) = manager.save_to_storage().await {
+                eprintln!("Failed to save data: {}", err);
+            }
+
+            tokio::time::sleep(Duration::from_secs(RECONNECT_DELAY_SECS)).await;
+
+            let reconnect_result = manager.ensure_ssh_session(&id).await;
+            if !reconnect_result.success {
+                eprintln!(
+                    "Failed to reconnect connection {}: {}",
+                    id, reconnect_result.message
+                );
+                let mut connections = manager.connections.write().await;
+                if let Some(connection) = connections.get_mut(&id) {
+                    connection.status = ConnectionStatus::Error;
+                }
+            } else if let Err(error) = manager.start_tunnels_by_ids(&id, &restart_tunnel_ids).await {
+                eprintln!(
+                    "SSH reconnected for connection {}, but failed to restart tunnels: {}",
+                    id, error
+                );
+            } else {
+                eprintln!("Successfully reconnected connection {}", id);
+            }
+
+            if let Err(err) = manager.save_to_storage().await {
+                eprintln!("Failed to save data: {}", err);
+            }
+
+            manager.reconnecting_connections.write().await.remove(&id);
+        });
     }
 }
 
@@ -670,11 +915,7 @@ async fn establish_ssh_session(
         }
     };
 
-    // Note: TCP keepalive is not directly available on TokioTcpStream in async-ssh2-lite
-    // We'll use SSH-level keepalive instead
-
-    // Try to establish SSH session with keepalive settings
-    let mut session = match AsyncSession::new(tcp, None) {
+    let mut session = match AsyncSession::new(tcp, Some(build_session_configuration())) {
         Ok(session) => session,
         Err(e) => {
             return Err(format!("Failed to create SSH session: {}", e));
@@ -726,129 +967,64 @@ async fn establish_ssh_session(
     Ok(session)
 }
 
-// Start local port forwarding - creates a task that handles the forwarding
-async fn start_local_forwarding(
-    tunnel: &SSHTunnel,
-    session: Arc<AsyncSession<TokioTcpStream>>,
-) -> Result<tokio::task::JoinHandle<()>, String> {
-    let local_addr = format!("0.0.0.0:{}", tunnel.local_port);
-    let remote_host = tunnel.remote_host.clone();
-    let remote_port = tunnel.remote_port;
-    let tunnel_id = tunnel.id.clone();
-    let tunnel_name = tunnel.name.clone();
-    let auto_reconnect = tunnel.auto_reconnect;
+fn build_session_configuration() -> SessionConfiguration {
+    let mut configuration = SessionConfiguration::new();
+    configuration.set_keepalive(true, SSH_KEEPALIVE_INTERVAL_SECS as u32);
+    configuration
+}
 
+fn create_local_tunnel_listener(port: u16) -> std::io::Result<TcpListener> {
+    let socket = TcpSocket::new_v4()?;
+    socket.set_reuseaddr(false)?;
+    socket.bind(std::net::SocketAddr::from(([0, 0, 0, 0], port)))?;
+    socket.listen(1024)
+}
+
+async fn start_local_forwarding(
+    manager: ConnectionManager,
+    tunnel: SSHTunnel,
+    session: Arc<AsyncSession<TokioTcpStream>>,
+) -> Result<ActiveTunnel, String> {
     println!(
         "Creating SSH tunnel: {} -> {}:{} (tunnel: {})",
-        tunnel_name, remote_host, remote_port, tunnel_name
+        tunnel.name, tunnel.remote_host, tunnel.remote_port, tunnel.name
     );
 
-    // Create TCP listener
-    let listener = match TcpListener::bind(&local_addr).await {
+    let listener = match create_local_tunnel_listener(tunnel.local_port) {
         Ok(listener) => listener,
         Err(e) => {
-            return Err(format!("Failed to bind to {}: {}", local_addr, e));
+            if e.kind() == std::io::ErrorKind::AddrInUse {
+                return Err(format!(
+                    "Local port {} is already in use",
+                    tunnel.local_port
+                ));
+            }
+            return Err(format!(
+                "Failed to bind local tunnel port {}: {}",
+                tunnel.local_port, e
+            ));
         }
     };
 
     let local_addr = listener.local_addr().unwrap();
     println!("Local tunnel listening on {}", local_addr);
 
-    // tunnel_id will be used in the println! below
-
-    // Spawn a task to handle incoming connections
-    let tunnel_id_clone = tunnel_id.clone();
-    let tunnel_id_heartbeat = tunnel_id.clone();
-    let session_heartbeat = session.clone();
+    let tunnel_for_task = tunnel.clone();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let handle = tokio::spawn(async move {
-        // Start a heartbeat task to keep the SSH session alive
-        let heartbeat_handle = tokio::spawn(async move {
-            let mut interval = interval(Duration::from_secs(30));
-            let mut failure_count = 0;
-            loop {
-                interval.tick().await;
-                // Send a keepalive message by opening and closing a channel
-                // This helps maintain the connection through NAT/firewalls
-                match session_heartbeat.channel_session().await {
-                    Ok(mut channel) => {
-                        // Try to execute a simple command to keep the session alive
-                        if let Err(e) = channel.exec("true").await {
-                            failure_count += 1;
-                            eprintln!("SSH keepalive failed for tunnel {} (attempt {}): {}", tunnel_id_heartbeat, failure_count, e);
-
-                            // After 3 consecutive failures, trigger reconnection
-                            if failure_count >= 3 && auto_reconnect {
-                                eprintln!("Too many keepalive failures for tunnel {}, triggering reconnection", tunnel_id_heartbeat);
-                                break;
-                            }
-                        } else {
-                            // Reset failure count on success
-                            failure_count = 0;
-                            // Close the channel immediately
-                            drop(channel);
-                        }
-                    }
-                    Err(e) => {
-                        failure_count += 1;
-                        eprintln!("Failed to create keepalive channel for tunnel {} (attempt {}): {}", tunnel_id_heartbeat, failure_count, e);
-
-                        // After 3 consecutive failures, trigger reconnection
-                        if failure_count >= 3 && auto_reconnect {
-                            eprintln!("Too many keepalive failures for tunnel {}, triggering reconnection", tunnel_id_heartbeat);
-                            break;
-                        }
-                    }
-                }
-            }
-        });
-
-        // Create a shutdown signal that will be triggered when the task is aborted
-        tokio::select! {
-            _result = async {
-                loop {
-                    match listener.accept().await {
-                        Ok((mut local_stream, _)) => {
-                            let session_clone = session.clone();
-                            let remote_host = remote_host.clone();
-
-                            tokio::spawn(async move {
-                                if let Err(e) = handle_local_connection(
-                                    session_clone,
-                                    &mut local_stream,
-                                    &remote_host,
-                                    remote_port,
-                                )
-                                .await
-                                {
-                                    eprintln!("Tunnel connection error: {}", e);
-                                }
-                            });
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to accept connection: {}", e);
-                            break;
-                        }
-                    }
-                }
-            } => {
-                println!("Tunnel {} listener loop ended", tunnel_id_clone);
-                heartbeat_handle.abort();
-            }
-            _ = tokio::signal::ctrl_c() => {
-                println!("Tunnel {} received shutdown signal", tunnel_id_clone);
-                heartbeat_handle.abort();
-            }
-        }
-
-        heartbeat_handle.abort();
-        println!("Tunnel {} gracefully shut down", tunnel_id_clone);
+        run_local_forwarding_loop(manager, tunnel_for_task, listener, session, shutdown_rx).await;
     });
 
     println!(
         "SSH tunnel created successfully for {}: {}",
-        tunnel_name, tunnel_id
+        tunnel.name, tunnel.id
     );
-    Ok(handle)
+
+    Ok(ActiveTunnel {
+        tunnel,
+        shutdown_tx: Some(shutdown_tx),
+        task_handle: handle,
+    })
 }
 
 // Handle a single local forwarding connection
@@ -874,124 +1050,65 @@ async fn handle_local_connection(
     Ok(())
 }
 
-// Start remote port forwarding - forwards remote port to local host
 async fn start_remote_forwarding(
-    tunnel: &SSHTunnel,
+    manager: ConnectionManager,
+    tunnel: SSHTunnel,
     session: Arc<AsyncSession<TokioTcpStream>>,
-) -> Result<tokio::task::JoinHandle<()>, String> {
+) -> Result<ActiveTunnel, String> {
     let local_addr = format!("127.0.0.1:{}", tunnel.local_port);
-    let remote_port = tunnel.remote_port;
-    let tunnel_id = tunnel.id.clone();
-    let tunnel_name = tunnel.name.clone();
-    let auto_reconnect = tunnel.auto_reconnect;
 
     println!(
         "Creating remote forwarding: remote:{} -> local:{} (tunnel: {})",
-        remote_port, tunnel.local_port, tunnel_name
+        tunnel.remote_port, tunnel.local_port, tunnel.name
     );
 
-    // Create listener on remote side
-    let (mut listener, _) = match session
-        .channel_forward_listen(remote_port, None, None)
+    let (listener, _) = match session
+        .channel_forward_listen(tunnel.remote_port, None, None)
         .await
     {
         Ok(listener) => listener,
         Err(e) => {
-            let error_msg = format!(
-                "Failed to create remote forwarding for tunnel {}: {}",
-                tunnel_name, e
-            );
+            let raw_error = e.to_string();
+            let error_msg = if raw_error
+                .to_ascii_lowercase()
+                .contains("address already in use")
+            {
+                format!("Remote port {} is already in use", tunnel.remote_port)
+            } else {
+                format!(
+                    "Failed to create remote forwarding for tunnel {}: {}",
+                    tunnel.name, raw_error
+                )
+            };
             eprintln!("{}", error_msg);
             return Err(error_msg);
         }
     };
 
-    let tunnel_id_clone = tunnel_id.clone();
-    let tunnel_id_heartbeat = tunnel_id.clone();
-    let session_heartbeat = session.clone();
-
-    // Spawn a task to handle incoming remote connections
+    let tunnel_for_task = tunnel.clone();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
     let handle = tokio::spawn(async move {
-        // Start a heartbeat task to keep the SSH session alive
-        let heartbeat_handle = tokio::spawn(async move {
-            let mut interval = interval(Duration::from_secs(30));
-            let mut failure_count = 0;
-            loop {
-                interval.tick().await;
-                // Send a keepalive message by opening and closing a channel
-                // This helps maintain the connection through NAT/firewalls
-                match session_heartbeat.channel_session().await {
-                    Ok(mut channel) => {
-                        // Try to execute a simple command to keep the session alive
-                        if let Err(e) = channel.exec("true").await {
-                            failure_count += 1;
-                            eprintln!("SSH keepalive failed for tunnel {} (attempt {}): {}", tunnel_id_heartbeat, failure_count, e);
-
-                            // After 3 consecutive failures, trigger reconnection
-                            if failure_count >= 3 && auto_reconnect {
-                                eprintln!("Too many keepalive failures for tunnel {}, triggering reconnection", tunnel_id_heartbeat);
-                                break;
-                            }
-                        } else {
-                            // Reset failure count on success
-                            failure_count = 0;
-                            // Close the channel immediately
-                            drop(channel);
-                        }
-                    }
-                    Err(e) => {
-                        failure_count += 1;
-                        eprintln!("Failed to create keepalive channel for tunnel {} (attempt {}): {}", tunnel_id_heartbeat, failure_count, e);
-
-                        // After 3 consecutive failures, trigger reconnection
-                        if failure_count >= 3 && auto_reconnect {
-                            eprintln!("Too many keepalive failures for tunnel {}, triggering reconnection", tunnel_id_heartbeat);
-                            break;
-                        }
-                    }
-                }
-            }
-        });
-
-        // Create a shutdown signal that will be triggered when the task is aborted
-        tokio::select! {
-            _result = async {
-                loop {
-                    match listener.accept().await {
-                        Ok(channel) => {
-                            let local_addr = local_addr.clone();
-
-                            tokio::spawn(async move {
-                                if let Err(e) = handle_remote_connection(channel, &local_addr).await {
-                                    eprintln!("Remote tunnel error: {}", e);
-                                }
-                            });
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to accept remote connection: {}", e);
-                            break;
-                        }
-                    }
-                }
-            } => {
-                println!("Remote tunnel {} listener loop ended", tunnel_id_clone);
-                heartbeat_handle.abort();
-            }
-            _ = tokio::signal::ctrl_c() => {
-                println!("Remote tunnel {} received shutdown signal", tunnel_id_clone);
-                heartbeat_handle.abort();
-            }
-        }
-
-        heartbeat_handle.abort();
-        println!("Remote tunnel {} gracefully shut down", tunnel_id_clone);
+        run_remote_forwarding_loop(
+            manager,
+            tunnel_for_task,
+            listener,
+            local_addr,
+            session,
+            shutdown_rx,
+        )
+        .await;
     });
 
     println!(
         "Remote forwarding created successfully for {}: {}",
-        tunnel_name, tunnel_id
+        tunnel.name, tunnel.id
     );
-    Ok(handle)
+
+    Ok(ActiveTunnel {
+        tunnel,
+        shutdown_tx: Some(shutdown_tx),
+        task_handle: handle,
+    })
 }
 
 // Handle a single remote forwarding connection
@@ -1011,6 +1128,182 @@ async fn handle_remote_connection(
     }
 
     Ok(())
+}
+
+async fn run_local_forwarding_loop(
+    manager: ConnectionManager,
+    tunnel: SSHTunnel,
+    listener: TcpListener,
+    session: Arc<AsyncSession<TokioTcpStream>>,
+    mut shutdown_rx: oneshot::Receiver<TunnelControl>,
+) {
+    let mut heartbeat = interval(Duration::from_secs(SSH_KEEPALIVE_INTERVAL_SECS));
+    heartbeat.tick().await;
+    let mut failure_count = 0;
+    let mut workers = JoinSet::new();
+    let remote_host = tunnel.remote_host.clone();
+    let remote_port = tunnel.remote_port;
+
+    let exit_reason = loop {
+        tokio::select! {
+            signal = &mut shutdown_rx => {
+                match signal {
+                    Ok(TunnelControl::Stop) | Err(_) => break TunnelExitReason::Stopped,
+                    Ok(TunnelControl::ConnectionLost(message)) => break TunnelExitReason::ConnectionLost(message),
+                }
+            }
+            _ = heartbeat.tick() => {
+                match session.keepalive_send().await {
+                    Ok(_) => {
+                        failure_count = 0;
+                    }
+                    Err(err) => {
+                        failure_count += 1;
+                        eprintln!(
+                            "SSH keepalive failed for tunnel {} (attempt {}): {}",
+                            tunnel.id, failure_count, err
+                        );
+                        if failure_count >= SSH_KEEPALIVE_FAILURE_THRESHOLD {
+                            break TunnelExitReason::ConnectionLost(format!("SSH keepalive failed: {}", err));
+                        }
+                    }
+                }
+            }
+            accept_result = listener.accept() => {
+                match accept_result {
+                    Ok((local_stream, _)) => {
+                        let session = session.clone();
+                        let remote_host = remote_host.clone();
+                        workers.spawn(async move {
+                            let mut local_stream = local_stream;
+                            if let Err(err) = handle_local_connection(
+                                session,
+                                &mut local_stream,
+                                &remote_host,
+                                remote_port,
+                            )
+                            .await
+                            {
+                                eprintln!("Tunnel connection error: {}", err);
+                            }
+                        });
+                    }
+                    Err(err) => {
+                        break TunnelExitReason::TunnelError(format!(
+                            "Failed to accept local connection: {}",
+                            err
+                        ));
+                    }
+                }
+            }
+            join_result = workers.join_next(), if !workers.is_empty() => {
+                if let Some(Err(err)) = join_result {
+                    if !err.is_cancelled() {
+                        eprintln!("Tunnel worker for {} exited unexpectedly: {}", tunnel.id, err);
+                    }
+                }
+            }
+        }
+    };
+
+    workers.abort_all();
+    while let Some(join_result) = workers.join_next().await {
+        if let Err(err) = join_result {
+            if !err.is_cancelled() {
+                eprintln!(
+                    "Tunnel worker for {} exited unexpectedly: {}",
+                    tunnel.id, err
+                );
+            }
+        }
+    }
+
+    manager
+        .handle_tunnel_runtime_exit(tunnel, exit_reason)
+        .await;
+}
+
+async fn run_remote_forwarding_loop(
+    manager: ConnectionManager,
+    tunnel: SSHTunnel,
+    mut listener: AsyncListener<TokioTcpStream>,
+    local_addr: String,
+    session: Arc<AsyncSession<TokioTcpStream>>,
+    mut shutdown_rx: oneshot::Receiver<TunnelControl>,
+) {
+    let mut heartbeat = interval(Duration::from_secs(SSH_KEEPALIVE_INTERVAL_SECS));
+    heartbeat.tick().await;
+    let mut failure_count = 0;
+    let mut workers = JoinSet::new();
+
+    let exit_reason = loop {
+        tokio::select! {
+            signal = &mut shutdown_rx => {
+                match signal {
+                    Ok(TunnelControl::Stop) | Err(_) => break TunnelExitReason::Stopped,
+                    Ok(TunnelControl::ConnectionLost(message)) => break TunnelExitReason::ConnectionLost(message),
+                }
+            }
+            _ = heartbeat.tick() => {
+                match session.keepalive_send().await {
+                    Ok(_) => {
+                        failure_count = 0;
+                    }
+                    Err(err) => {
+                        failure_count += 1;
+                        eprintln!(
+                            "SSH keepalive failed for tunnel {} (attempt {}): {}",
+                            tunnel.id, failure_count, err
+                        );
+                        if failure_count >= SSH_KEEPALIVE_FAILURE_THRESHOLD {
+                            break TunnelExitReason::ConnectionLost(format!("SSH keepalive failed: {}", err));
+                        }
+                    }
+                }
+            }
+            accept_result = listener.accept() => {
+                match accept_result {
+                    Ok(channel) => {
+                        let local_addr = local_addr.clone();
+                        workers.spawn(async move {
+                            if let Err(err) = handle_remote_connection(channel, &local_addr).await {
+                                eprintln!("Remote tunnel error: {}", err);
+                            }
+                        });
+                    }
+                    Err(err) => {
+                        break TunnelExitReason::TunnelError(format!(
+                            "Failed to accept remote connection: {}",
+                            err
+                        ));
+                    }
+                }
+            }
+            join_result = workers.join_next(), if !workers.is_empty() => {
+                if let Some(Err(err)) = join_result {
+                    if !err.is_cancelled() {
+                        eprintln!("Remote tunnel worker for {} exited unexpectedly: {}", tunnel.id, err);
+                    }
+                }
+            }
+        }
+    };
+
+    workers.abort_all();
+    while let Some(join_result) = workers.join_next().await {
+        if let Err(err) = join_result {
+            if !err.is_cancelled() {
+                eprintln!(
+                    "Remote tunnel worker for {} exited unexpectedly: {}",
+                    tunnel.id, err
+                );
+            }
+        }
+    }
+
+    manager
+        .handle_tunnel_runtime_exit(tunnel, exit_reason)
+        .await;
 }
 
 // Test SSH connection
@@ -1076,7 +1369,7 @@ async fn test_ssh_connection_async(connection: &SSHConnection) -> ConnectionResu
     };
 
     // Try to establish SSH session
-    let mut session = match AsyncSession::new(tcp, None) {
+    let mut session = match AsyncSession::new(tcp, Some(build_session_configuration())) {
         Ok(session) => session,
         Err(e) => {
             return ConnectionResult {
@@ -1170,4 +1463,156 @@ async fn test_ssh_connection_async(connection: &SSHConnection) -> ConnectionResu
 // Helper function to generate UUID
 pub fn generate_id() -> String {
     Uuid::new_v4().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_connection(id: &str, status: ConnectionStatus) -> SSHConnection {
+        SSHConnection {
+            id: id.to_string(),
+            name: "Test Connection".to_string(),
+            host: "127.0.0.1".to_string(),
+            port: 22,
+            username: "tester".to_string(),
+            auth_method: AuthMethod::Password,
+            password: Some("secret".to_string()),
+            key_path: None,
+            status,
+            last_connected: None,
+            created_at: SystemTime::now(),
+        }
+    }
+
+    fn sample_tunnel(
+        id: &str,
+        connection_id: &str,
+        status: TunnelStatus,
+        auto_reconnect: bool,
+    ) -> SSHTunnel {
+        SSHTunnel {
+            id: id.to_string(),
+            connection_id: connection_id.to_string(),
+            name: "Test Tunnel".to_string(),
+            tunnel_type: TunnelType::Local,
+            local_port: 8080,
+            remote_host: "127.0.0.1".to_string(),
+            remote_port: 80,
+            status,
+            auto_reconnect,
+        }
+    }
+
+    fn spawn_dummy_active_tunnel(manager: ConnectionManager, tunnel: SSHTunnel) -> ActiveTunnel {
+        let (shutdown_tx, shutdown_rx) = oneshot::channel();
+        let tunnel_for_task = tunnel.clone();
+        let task_handle = tokio::spawn(async move {
+            let exit_reason = match shutdown_rx.await {
+                Ok(TunnelControl::Stop) | Err(_) => TunnelExitReason::Stopped,
+                Ok(TunnelControl::ConnectionLost(message)) => {
+                    TunnelExitReason::ConnectionLost(message)
+                }
+            };
+            manager
+                .handle_tunnel_runtime_exit(tunnel_for_task, exit_reason)
+                .await;
+        });
+
+        ActiveTunnel {
+            tunnel,
+            shutdown_tx: Some(shutdown_tx),
+            task_handle,
+        }
+    }
+
+    #[tokio::test]
+    async fn stop_active_tunnel_marks_it_inactive() {
+        let manager = ConnectionManager::new();
+        let connection = sample_connection("conn-stop", ConnectionStatus::Connected);
+        let tunnel = sample_tunnel("tunnel-stop", "conn-stop", TunnelStatus::Active, false);
+
+        manager
+            .connections
+            .write()
+            .await
+            .insert(connection.id.clone(), connection);
+        manager
+            .tunnels
+            .write()
+            .await
+            .insert(tunnel.id.clone(), tunnel.clone());
+        manager.active_tunnels.write().await.insert(
+            tunnel.id.clone(),
+            spawn_dummy_active_tunnel(manager.clone(), tunnel.clone()),
+        );
+
+        assert!(
+            manager
+                .stop_active_tunnel(&tunnel.id, TunnelControl::Stop)
+                .await
+        );
+        assert!(manager.active_tunnels.read().await.is_empty());
+
+        let tunnels = manager.tunnels.read().await;
+        assert!(matches!(
+            tunnels.get(&tunnel.id).map(|tunnel| &tunnel.status),
+            Some(TunnelStatus::Inactive)
+        ));
+    }
+
+    #[tokio::test]
+    async fn health_check_without_session_marks_connection_and_tunnel_error() {
+        let manager = ConnectionManager::new();
+        let connection = sample_connection("conn-health", ConnectionStatus::Connected);
+        let tunnel = sample_tunnel("tunnel-health", "conn-health", TunnelStatus::Active, false);
+
+        manager
+            .connections
+            .write()
+            .await
+            .insert(connection.id.clone(), connection.clone());
+        manager
+            .tunnels
+            .write()
+            .await
+            .insert(tunnel.id.clone(), tunnel.clone());
+        manager.active_tunnels.write().await.insert(
+            tunnel.id.clone(),
+            spawn_dummy_active_tunnel(manager.clone(), tunnel.clone()),
+        );
+
+        manager.check_connection_health(&connection.id).await;
+
+        let connections = manager.connections.read().await;
+        assert!(matches!(
+            connections
+                .get(&connection.id)
+                .map(|connection| &connection.status),
+            Some(ConnectionStatus::Error)
+        ));
+        drop(connections);
+
+        let tunnels = manager.tunnels.read().await;
+        assert!(matches!(
+            tunnels.get(&tunnel.id).map(|tunnel| &tunnel.status),
+            Some(TunnelStatus::Error)
+        ));
+        drop(tunnels);
+
+        assert!(manager.active_tunnels.read().await.is_empty());
+    }
+
+    #[test]
+    fn local_listener_fails_when_loopback_port_is_already_bound() {
+        let occupied_listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = occupied_listener.local_addr().unwrap().port();
+
+        let bind_result = create_local_tunnel_listener(port);
+
+        assert!(matches!(
+            bind_result.as_ref().map_err(|error| error.kind()),
+            Err(std::io::ErrorKind::AddrInUse)
+        ));
+    }
 }

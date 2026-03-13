@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia';
+import { acceptHMRUpdate, defineStore } from 'pinia';
 import { ref } from 'vue';
 import { sshApi } from '../services/ssh';
 
@@ -91,3 +91,7 @@ export const useSettingsStore = defineStore('settings', () => {
     initialize,
   };
 });
+
+if (import.meta.hot) {
+  import.meta.hot.accept(acceptHMRUpdate(useSettingsStore, import.meta.hot));
+}

@@ -122,6 +122,10 @@ export const sshApi = {
     return await invoke('stop_tunnel', { id: String(id) });
   },
 
+  async startTunnel(id: string): Promise<ConnectionResult> {
+    return await invoke('start_tunnel', { id: String(id) });
+  },
+
   
   // Settings operations
   async getSettings(): Promise<any> {

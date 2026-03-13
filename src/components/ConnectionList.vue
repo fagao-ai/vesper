@@ -93,17 +93,36 @@
               </div>
 
               <!-- Quick Actions -->
-              <div class="flex items-center space-x-1 opacity-0 hover:opacity-100 transition-opacity duration-200">
+              <div
+                class="flex items-center space-x-1 opacity-0 hover:opacity-100 transition-opacity duration-200"
+                :class="{ '!opacity-100': Boolean(getPendingConnectionAction(connection.id)) || connection.status === 'connecting' }"
+              >
                 <el-button
-                  v-if="connection.status === 'disconnected' || connection.status === 'error'"
+                  v-if="getPendingConnectionAction(connection.id) === 'connect' || connection.status === 'connecting'"
                   type="success"
                   size="small"
                   circle
-                  :loading="connection.status === 'connecting'"
-                  :disabled="connection.status === 'connecting'"
+                  loading
+                  disabled
+                  @click.stop
+                />
+                <el-button
+                  v-else-if="getPendingConnectionAction(connection.id) === 'disconnect'"
+                  type="danger"
+                  size="small"
+                  circle
+                  loading
+                  disabled
+                  @click.stop
+                />
+                <el-button
+                  v-else-if="connection.status === 'disconnected' || connection.status === 'error'"
+                  type="success"
+                  size="small"
+                  circle
                   @click.stop="$emit('connect', connection.id)"
                 >
-                  <el-icon v-if="connection.status !== 'connecting'"><VideoPlay /></el-icon>
+                  <el-icon><VideoPlay /></el-icon>
                 </el-button>
                 <el-button
                   v-else-if="connection.status === 'connected'"
@@ -162,6 +181,7 @@ interface Props {
   connections: SSHConnection[];
   tunnels: SSHTunnel[];
   selectedId?: string | null;
+  pendingConnectionActions?: Record<string, 'connect' | 'disconnect'>;
 }
 
 const props = defineProps<Props>();
@@ -183,6 +203,10 @@ const connectionsStore = useConnectionsStore();
 
 const getTunnels = (connectionId: string) => {
   return props.tunnels.filter(tunnel => tunnel.connection_id === connectionId);
+};
+
+const getPendingConnectionAction = (connectionId: string) => {
+  return props.pendingConnectionActions?.[connectionId] || null;
 };
 
 const getStatusText = (status: string) => {

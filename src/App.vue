@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue';
 import { useConnectionsStore } from './stores/connections';
 import { useSettingsStore } from './stores/settings';
 import { useTheme } from './composables/useTheme';
@@ -13,6 +13,7 @@ import SettingsModal from './components/SettingsModal.vue';
 import type { SSHConnection, SSHTunnel } from './types';
 import { createTray, updateTrayLanguage } from './utils/tray';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { sshApi } from './services/ssh';
 
 const connectionsStore = useConnectionsStore();
 const settingsStore = useSettingsStore();
@@ -39,6 +40,10 @@ onMounted(async () => {
     // 最后初始化 connections store
     await connectionsStore.initialize();
 
+    syncTimer = window.setInterval(() => {
+      void connectionsStore.syncState({ silent: true });
+    }, 5000);
+
     // 初始化系统托盘 - 延迟一点确保应用完全加载
     setTimeout(async () => {
       try {
@@ -58,6 +63,13 @@ onMounted(async () => {
     });
   } catch (error) {
     console.error('Failed to initialize stores:', error);
+  }
+});
+
+onBeforeUnmount(() => {
+  if (syncTimer !== null) {
+    window.clearInterval(syncTimer);
+    syncTimer = null;
   }
 });
 
@@ -83,6 +95,9 @@ const editingTunnel = ref<SSHTunnel | null>(null);
 const showSettingsModal = ref(false);
 const leftPanelWidth = ref(240); // 默认左侧面板宽度
 const isDragging = ref(false);
+const pendingConnectionActions = ref<Record<string, 'connect' | 'disconnect'>>({});
+const pendingTunnelActions = ref<Record<string, 'start' | 'stop'>>({});
+let syncTimer: number | null = null;
 
 const selectedConnection = computed(() => {
   if (!selectedConnectionId.value) return null;
@@ -94,6 +109,36 @@ const selectedConnection = computed(() => {
   }
   return connection;
 });
+
+const setPendingConnectionAction = (id: string, action: 'connect' | 'disconnect' | null) => {
+  const nextState = { ...pendingConnectionActions.value };
+  if (action) {
+    nextState[id] = action;
+  } else {
+    delete nextState[id];
+  }
+  pendingConnectionActions.value = nextState;
+};
+
+const getPendingConnectionAction = (id?: string | null) => {
+  if (!id) return null;
+  return pendingConnectionActions.value[id] || null;
+};
+
+const setPendingTunnelAction = (id: string, action: 'start' | 'stop' | null) => {
+  const nextState = { ...pendingTunnelActions.value };
+  if (action) {
+    nextState[id] = action;
+  } else {
+    delete nextState[id];
+  }
+  pendingTunnelActions.value = nextState;
+};
+
+const getPendingTunnelAction = (id?: string | null) => {
+  if (!id) return null;
+  return pendingTunnelActions.value[id] || null;
+};
 
 // 拖动调整分割条
 const handleMouseDown = (e: MouseEvent) => {
@@ -197,18 +242,32 @@ const handleModalCancel = () => {
 };
 
 const handleConnect = async (id: string) => {
+  if (getPendingConnectionAction(id)) {
+    return;
+  }
+
+  setPendingConnectionAction(id, 'connect');
   try {
     const result = await connectionsStore.connectSSH(id);
     if (!result.success) {
       alert(`连接失败: ${result.message}`);
+    } else if (result.error_code === 'TUNNEL_START_FAILED') {
+      alert(`连接已建立，但隧道启动失败: ${result.message}`);
     }
   } catch (error) {
     console.error('Failed to connect:', error);
     alert(`连接失败: ${error}`);
+  } finally {
+    setPendingConnectionAction(id, null);
   }
 };
 
 const handleDisconnect = async (id: string) => {
+  if (getPendingConnectionAction(id)) {
+    return;
+  }
+
+  setPendingConnectionAction(id, 'disconnect');
   try {
     const result = await connectionsStore.disconnectSSH(id);
     if (!result.success) {
@@ -217,6 +276,8 @@ const handleDisconnect = async (id: string) => {
   } catch (error) {
     console.error('Failed to disconnect:', error);
     alert(`断开连接失败: ${error}`);
+  } finally {
+    setPendingConnectionAction(id, null);
   }
 };
 
@@ -272,6 +333,69 @@ const handleRemoveTunnel = async (id: string) => {
   } catch (error) {
     console.error('Failed to remove tunnel:', error);
     alert(`删除隧道失败: ${error}`);
+  }
+};
+
+const startTunnel = async (id: string) => {
+  const store = connectionsStore as typeof connectionsStore & {
+    startTunnel?: (tunnelId: string) => Promise<{ success: boolean; message: string }>;
+  };
+
+  if (typeof store.startTunnel === 'function') {
+    return store.startTunnel(id);
+  }
+
+  console.warn('connectionsStore.startTunnel is unavailable, falling back to direct API call.');
+  const result = await sshApi.startTunnel(id);
+  await connectionsStore.syncState({ silent: true });
+  return result;
+};
+
+const handleStartTunnel = async (id: string) => {
+  if (getPendingTunnelAction(id)) {
+    return;
+  }
+
+  const tunnel = connectionsStore.tunnels.find(item => item.id === id);
+  let pendingConnectionId: string | null = null;
+  if (tunnel) {
+    const connection = connectionsStore.getConnectionById(tunnel.connection_id);
+    if (connection && connection.status !== 'connected' && !getPendingConnectionAction(connection.id)) {
+      pendingConnectionId = connection.id;
+      setPendingConnectionAction(connection.id, 'connect');
+    }
+  }
+
+  setPendingTunnelAction(id, 'start');
+  try {
+    const result = await startTunnel(id);
+    if (!result.success) {
+      alert(`启动隧道失败: ${result.message}`);
+    }
+  } catch (error) {
+    console.error('Failed to start tunnel:', error);
+    alert(`启动隧道失败: ${error}`);
+  } finally {
+    setPendingTunnelAction(id, null);
+    if (pendingConnectionId) {
+      setPendingConnectionAction(pendingConnectionId, null);
+    }
+  }
+};
+
+const handleStopTunnel = async (id: string) => {
+  if (getPendingTunnelAction(id)) {
+    return;
+  }
+
+  setPendingTunnelAction(id, 'stop');
+  try {
+    await connectionsStore.stopTunnel(id);
+  } catch (error) {
+    console.error('Failed to stop tunnel:', error);
+    alert(`停止隧道失败: ${error}`);
+  } finally {
+    setPendingTunnelAction(id, null);
   }
 };
 
@@ -360,6 +484,7 @@ const openGitHub = async () => {
               :connections="connectionsStore.connections"
               :tunnels="connectionsStore.tunnels"
               :selected-id="selectedConnectionId"
+              :pending-connection-actions="pendingConnectionActions"
               @select-connection="handleSelectConnection"
               @add-connection="handleAddConnection"
               @edit-connection="handleEditConnection"
@@ -386,11 +511,15 @@ const openGitHub = async () => {
             <ConnectionDetail
               :connection="selectedConnection"
               :tunnels="selectedConnection ? connectionsStore.tunnels.filter(t => t.connection_id === selectedConnection!.id) : []"
+              :pending-connection-actions="pendingConnectionActions"
+              :pending-tunnel-actions="pendingTunnelActions"
               @connect="handleConnect"
               @disconnect="handleDisconnect"
               @add-tunnel="handleAddTunnel"
               @edit-tunnel="handleEditTunnel"
               @remove-tunnel="handleRemoveTunnel"
+              @start-tunnel="handleStartTunnel"
+              @stop-tunnel="handleStopTunnel"
             />
           </div>
         </div>

@@ -27,7 +27,25 @@
 
         <div class="flex items-center space-x-3">
           <el-button
-            v-if="connection.status === 'disconnected' || connection.status === 'error'"
+            v-if="getPendingConnectionAction(connection.id) === 'connect' || connection.status === 'connecting'"
+            type="success"
+            size="default"
+            loading
+            disabled
+          >
+            {{ translate('connecting') }}
+          </el-button>
+          <el-button
+            v-else-if="getPendingConnectionAction(connection.id) === 'disconnect'"
+            type="danger"
+            size="default"
+            loading
+            disabled
+          >
+            {{ translate('disconnecting') }}
+          </el-button>
+          <el-button
+            v-else-if="connection.status === 'disconnected' || connection.status === 'error'"
             type="success"
             size="default"
             @click="$emit('connect', connection.id)"
@@ -43,13 +61,6 @@
           >
             <el-icon class="mr-1"><VideoPause /></el-icon>
             {{ translate('disconnect') }}
-          </el-button>
-          <el-button
-            v-else-if="connection.status === 'connecting'"
-            loading
-            disabled
-          >
-            {{ translate('connecting') }}
           </el-button>
         </div>
       </div>
@@ -167,10 +178,10 @@
                     <div class="flex items-center space-x-3 mb-2">
                       <h5 class="font-medium text-gray-800">{{ tunnel.name }}</h5>
                       <el-tag
-                        :type="tunnel.status === 'active' ? 'success' : 'info'"
+                        :type="getTunnelStatusType(tunnel.status)"
                         size="small"
                       >
-                        {{ tunnel.status === 'active' ? '运行中' : '已停止' }}
+                        {{ getTunnelStatusText(tunnel.status) }}
                       </el-tag>
                       <el-tag size="small" effect="plain">
                         {{ getTunnelTypeText(tunnel.tunnel_type) }}
@@ -182,7 +193,52 @@
                   </div>
 
                   <div class="flex items-center space-x-2">
-                    <el-dropdown trigger="click" @command="handleTunnelAction">
+                    <el-button
+                      v-if="getPendingTunnelAction(tunnel.id) === 'stop'"
+                      type="danger"
+                      size="small"
+                      plain
+                      loading
+                      disabled
+                    >
+                      {{ translate('stopping') }}
+                    </el-button>
+                    <el-button
+                      v-else-if="getPendingTunnelAction(tunnel.id) === 'start'"
+                      type="success"
+                      size="small"
+                      plain
+                      loading
+                      disabled
+                    >
+                      {{ translate('starting') }}
+                    </el-button>
+                    <el-button
+                      v-else-if="tunnel.status === 'active'"
+                      type="danger"
+                      size="small"
+                      plain
+                      @click="$emit('stop-tunnel', tunnel.id)"
+                    >
+                      <el-icon class="mr-1"><VideoPause /></el-icon>
+                      {{ translate('stop') }}
+                    </el-button>
+                    <el-button
+                      v-else
+                      type="success"
+                      size="small"
+                      plain
+                      :disabled="connection?.status === 'connecting' || Boolean(getPendingConnectionAction(connection?.id))"
+                      @click="$emit('start-tunnel', tunnel.id)"
+                    >
+                      <el-icon class="mr-1"><VideoPlay /></el-icon>
+                      {{ translate('start') }}
+                    </el-button>
+                    <el-dropdown
+                      trigger="click"
+                      :disabled="Boolean(getPendingTunnelAction(tunnel.id))"
+                      @command="handleTunnelAction"
+                    >
                       <el-button type="text" size="small">
                         <el-icon><MoreFilled /></el-icon>
                       </el-button>
@@ -219,6 +275,8 @@ import type { SSHConnection, SSHTunnel } from '../types';
 interface Props {
   connection: SSHConnection | null;
   tunnels: SSHTunnel[];
+  pendingConnectionActions?: Record<string, 'connect' | 'disconnect'>;
+  pendingTunnelActions?: Record<string, 'start' | 'stop'>;
 }
 
 const props = defineProps<Props>();
@@ -229,10 +287,21 @@ const emit = defineEmits<{
   'add-tunnel': [connectionId: string];
   'edit-tunnel': [tunnel: SSHTunnel];
   'remove-tunnel': [id: string];
+  'start-tunnel': [id: string];
+  'stop-tunnel': [id: string];
 }>();
 
 const { translate } = useI18n();
 const activeTab = ref('info');
+
+const getPendingConnectionAction = (connectionId?: string | null) => {
+  if (!connectionId) return null;
+  return props.pendingConnectionActions?.[connectionId] || null;
+};
+
+const getPendingTunnelAction = (tunnelId: string) => {
+  return props.pendingTunnelActions?.[tunnelId] || null;
+};
 
 const getStatusText = (status: string) => {
   const statusMap = {
@@ -260,6 +329,24 @@ const getTunnelTypeText = (type: string) => {
     'remote': '远程转发'
   };
   return typeMap[type as keyof typeof typeMap] || type;
+};
+
+const getTunnelStatusText = (status: string) => {
+  const statusMap = {
+    active: translate('tunnel_status_active'),
+    inactive: translate('tunnel_status_inactive'),
+    error: translate('tunnel_status_error')
+  };
+  return statusMap[status as keyof typeof statusMap] || status;
+};
+
+const getTunnelStatusType = (status: string) => {
+  const typeMap = {
+    active: 'success',
+    inactive: 'info',
+    error: 'danger'
+  };
+  return typeMap[status as keyof typeof typeMap] || 'info';
 };
 
 const formatTunnelConfig = (tunnel: SSHTunnel) => {

@@ -7,7 +7,6 @@ mod storage;
 use ssh::ConnectionManager;
 use std::sync::Arc;
 use tauri::Manager;
-use tauri::Listener;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -49,6 +48,7 @@ pub fn run() {
             commands::update_tunnel,
             commands::get_tunnels,
             commands::get_tunnels_by_connection,
+            commands::start_tunnel,
             commands::stop_tunnel,
             commands::delete_tunnel,
             // Settings Commands

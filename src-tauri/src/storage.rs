@@ -1,5 +1,5 @@
-use crate::ssh::{SSHConnection, SSHTunnel};
 use crate::settings::AppConfig;
+use crate::ssh::{SSHConnection, SSHTunnel};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -33,9 +33,7 @@ impl DataManager {
             .ok_or("Failed to get data directory")?
             .join("vesper");
 
-        Ok(Self {
-            data_path,
-        })
+        Ok(Self { data_path })
     }
 
     fn get_data_file_path(&self) -> PathBuf {
@@ -83,8 +81,7 @@ impl DataManager {
 
         // 写入临时文件，然后原子性移动
         let temp_path = file_path.with_extension("tmp");
-        fs::write(&temp_path, content)
-            .map_err(|e| format!("Failed to write temp file: {}", e))?;
+        fs::write(&temp_path, content).map_err(|e| format!("Failed to write temp file: {}", e))?;
 
         // 原子性移动
         fs::rename(&temp_path, &file_path)
@@ -121,6 +118,7 @@ impl DataManager {
     }
 
     // 便利方法：直接保存连接和隧道
+    #[cfg_attr(test, allow(dead_code))]
     pub async fn save_connections_and_tunnels(
         &self,
         connections: &HashMap<String, SSHConnection>,

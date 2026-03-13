@@ -1,5 +1,7 @@
-use crate::ssh::{ConnectionManager, SSHConnection, SSHTunnel, AuthMethod, TunnelType, generate_id};
 use crate::settings::AppConfig;
+use crate::ssh::{
+    generate_id, AuthMethod, ConnectionManager, SSHConnection, SSHTunnel, TunnelType,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
@@ -105,7 +107,9 @@ pub async fn update_connection(
     request: UpdateConnectionRequest,
     manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<(), String> {
-    let existing_connection = manager.get_connection(&request.id).await
+    let existing_connection = manager
+        .get_connection(&request.id)
+        .await
         .ok_or("Connection not found")?;
 
     let auth_method = match request.auth_method.as_str() {
@@ -128,7 +132,9 @@ pub async fn update_connection(
         created_at: existing_connection.created_at,
     };
 
-    manager.update_connection(updated_connection.id.clone(), updated_connection).await
+    manager
+        .update_connection(updated_connection.id.clone(), updated_connection)
+        .await
 }
 
 #[tauri::command]
@@ -144,7 +150,9 @@ pub async fn test_connection(
     id: String,
     manager: State<'_, Arc<ConnectionManager>>,
 ) -> Result<crate::ssh::ConnectionResult, String> {
-    let connection = manager.get_connection(&id).await
+    let connection = manager
+        .get_connection(&id)
+        .await
         .ok_or("Connection not found")?;
 
     Ok(manager.test_connection(&connection).await)
@@ -229,7 +237,8 @@ pub async fn update_tunnel(
 ) -> Result<(), String> {
     // Get existing tunnels to find the current status
     let existing_tunnels = manager.get_tunnels().await;
-    let existing_tunnel = existing_tunnels.iter()
+    let existing_tunnel = existing_tunnels
+        .iter()
         .find(|t| t.id == request.id)
         .ok_or("Tunnel not found")?;
 
@@ -251,7 +260,9 @@ pub async fn update_tunnel(
         auto_reconnect: request.auto_reconnect,
     };
 
-    manager.update_tunnel(updated_tunnel.id.clone(), updated_tunnel).await
+    manager
+        .update_tunnel(updated_tunnel.id.clone(), updated_tunnel)
+        .await
 }
 
 #[tauri::command]
@@ -285,6 +296,13 @@ pub async fn stop_tunnel(
     manager.stop_tunnel(id).await
 }
 
+#[tauri::command]
+pub async fn start_tunnel(
+    id: String,
+    manager: State<'_, Arc<ConnectionManager>>,
+) -> Result<crate::ssh::ConnectionResult, String> {
+    Ok(manager.start_tunnel(&id).await)
+}
 
 // Settings Commands
 #[tauri::command]
